@@ -81,7 +81,7 @@ export default function App() {
       <header className="sticky top-0 z-30 bg-orange-50/90 backdrop-blur border-b border-orange-100">
         <div className="flex items-center justify-between px-4 py-2.5 max-w-[480px] mx-auto">
           <div className="flex items-center gap-2">
-            <Mascot size={34} />
+            <Mascot size={34} src="/logo.png" />
             <div className="leading-tight">
               <div className="font-extrabold text-lg text-orange-600">SlovakFast</div>
               <div className="text-[10px] text-stone-400">

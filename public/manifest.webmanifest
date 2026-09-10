@@ -9,9 +9,15 @@
   "lang": "ru",
   "icons": [
     {
-      "src": "/mascot.svg",
+      "src": "/appicon192.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/appicon512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     }
   ]

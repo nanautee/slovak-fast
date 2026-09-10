@@ -3,11 +3,11 @@ const files = import.meta.glob("../assets/*.{png,webp,jpg,jpeg}", {
   import: "default",
 });
 
-export default function Mascot({ size = 64, className = "", bounce = false }) {
-  const src = Object.values(files)[0] || "/mascot.svg";
+export default function Mascot({ size = 64, className = "", bounce = false, src }) {
+  const resolved = src || Object.values(files)[0] || "/hero.png";
   return (
     <img
-      src={src}
+      src={resolved}
       alt="Mačka"
       width={size}
       height={size}
