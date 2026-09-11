@@ -24,20 +24,6 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, ai: hasKey(), users: listUsers().map((u) => u.name) })
 );
 
-app.get("/api/debug/models", async (c) => {
-  const key = process.env.GROQ_API_KEY || "";
-  if (!key) return c.json({ error: "no key" }, 500);
-  try {
-    const r = await fetch("https://api.groq.com/openai/v1/models", {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    const j = await r.json();
-    return c.json({ status: r.status, data: (j.data || []).map((m) => m.id) });
-  } catch (e) {
-    return c.json({ error: e.message }, 500);
-  }
-});
-
 function requireAuth(c) {
   const auth = c.req.header("Authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "");
