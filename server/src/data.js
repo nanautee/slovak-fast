@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 
 const dataDir = () => process.env.DATA_DIR || "./data";
@@ -42,18 +43,22 @@ function legacyProfiles(raw) {
   return out;
 }
 
+function hashPin(pin) {
+  return createHash("sha256").update(String(pin || "")).digest("hex");
+}
+
 function load() {
   if (db) return db;
   try {
     if (existsSync(dbFile())) {
       const raw = JSON.parse(readFileSync(dbFile(), "utf8"));
-      db = { profiles: legacyProfiles(raw) };
+      db = { profiles: legacyProfiles(raw), pins: (raw && raw.pins) ? raw.pins : {} };
       return db;
     }
   } catch (e) {
     console.error("data store corrupted, starting fresh:", e.message);
   }
-  db = { profiles: {} };
+  db = { profiles: {}, pins: {} };
   return db;
 }
 
@@ -83,7 +88,7 @@ export function getProfile(id) {
   return load().profiles[id] || null;
 }
 
-export function createProfile(id, name) {
+export function createProfile(id, name, pin) {
   const d = load();
   if (d.profiles[id]) throw Object.assign(new Error("Профиль уже существует"), { status: 409 });
   const key = name.trim().toLowerCase();
@@ -91,14 +96,20 @@ export function createProfile(id, name) {
     throw Object.assign(new Error("Имя уже занято"), { status: 409 });
   }
   d.profiles[id] = sanitize(seedProfile(name.trim()));
+  if (pin) d.pins[id] = hashPin(pin);
   persist();
   return { id, name: name.trim() };
 }
 
-export function deleteProfile(id) {
+export function deleteProfile(id, pin) {
   load();
   if (!db.profiles[id]) throw Object.assign(new Error("Профиль не найден"), { status: 404 });
+  const stored = db.pins[id];
+  if (!stored) throw Object.assign(new Error("Нет прав на удаление этого профиля"), { status: 401 });
+  if (!pin) throw Object.assign(new Error("Нужен PIN владельца"), { status: 401 });
+  if (hashPin(pin) !== stored) throw Object.assign(new Error("Неверный PIN"), { status: 403 });
   delete db.profiles[id];
+  delete db.pins[id];
   persist();
 }
 

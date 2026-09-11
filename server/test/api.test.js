@@ -38,18 +38,18 @@ test("state empty at start", async () => {
 });
 
 test("createProfile", async () => {
-  let r = await call("POST", "/api/profile", { id: "a", name: "Аня" });
+  let r = await call("POST", "/api/profile", { id: "a", name: "Аня", pin: "p1" });
   assert.equal(r.status, 200);
   assert.equal(r.json.profile.name, "Аня");
 
-  r = await call("POST", "/api/profile", { id: "b", name: "А" });
+  r = await call("POST", "/api/profile", { id: "b", name: "А", pin: "p" });
   assert.equal(r.status, 400);
 
-  r = await call("POST", "/api/profile", { id: "c", name: "аня" });
+  r = await call("POST", "/api/profile", { id: "c", name: "аня", pin: "p" });
   assert.equal(r.status, 409);
   assert.match(r.json.error, /Имя уже занято/);
 
-  r = await call("POST", "/api/profile", { id: "a", name: "Макс" });
+  r = await call("POST", "/api/profile", { id: "a", name: "Макс", pin: "p" });
   assert.equal(r.status, 409);
 });
 
@@ -94,7 +94,7 @@ test("chat fallback", async () => {
 });
 
 test("state save per profile", async () => {
-  const r = await call("POST", "/api/profile", { id: "b", name: "Макс" });
+  const r = await call("POST", "/api/profile", { id: "b", name: "Макс", pin: "p2" });
   assert.equal(r.status, 200);
 
   let state = await call("GET", "/api/state");
@@ -119,14 +119,20 @@ test("PUT state without id is rejected", async () => {
   assert.equal(status, 400);
 });
 
-test("deleteProfile", async () => {
+test("deleteProfile requires owner PIN", async () => {
   let r = await call("DELETE", "/api/profile/b");
+  assert.equal(r.status, 401);
+
+  r = await call("DELETE", "/api/profile/b", { pin: "wrong" });
+  assert.equal(r.status, 403);
+
+  r = await call("DELETE", "/api/profile/b", { pin: "p2" });
   assert.equal(r.status, 200);
 
   const state = await call("GET", "/api/state");
   assert.ok(!state.json.profiles.b);
   assert.equal(state.json.meta.profiles.length, 1);
 
-  r = await call("DELETE", "/api/profile/b");
+  r = await call("DELETE", "/api/profile/b", { pin: "p2" });
   assert.equal(r.status, 404);
 });

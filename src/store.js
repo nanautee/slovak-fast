@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, getUserId, setUserId } from "./lib/api.js";
+import { api, getUserId, setUserId, getPins, setPins, uid } from "./lib/api.js";
 
 const INTERVALS = [1, 2, 4, 7, 15, 30, 60];
 
@@ -172,8 +172,12 @@ export async function init() {
 }
 
 export async function addProfile(name) {
-  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
-  await api.createProfile(id, name.trim());
+  const id = uid();
+  const pin = uid();
+  await api.createProfile(id, name.trim(), pin);
+  const pins = getPins();
+  pins[id] = pin;
+  setPins(pins);
   setUserId(id);
   hydrate(await api.state(), id);
   notify();
@@ -187,7 +191,10 @@ export async function selectProfile(id) {
 }
 
 export async function deleteProfile(id) {
-  await api.deleteProfile(id);
+  const pins = getPins();
+  await api.deleteProfile(id, pins[id]);
+  delete pins[id];
+  setPins(pins);
   setUserId("");
   try {
     const payload = await api.state();

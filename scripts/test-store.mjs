@@ -18,7 +18,7 @@ const seed = (name) => ({
   seenTopics: [],
 });
 
-const serverSim = { profiles: { anya: seed("Аня"), max: seed("Макс") } };
+const serverSim = { profiles: { anya: seed("Аня"), max: seed("Макс") }, pins: { anya: "p-anya", max: "p-max" } };
 
 const meta = () => ({
   active: store["sf_user"] || null,
@@ -38,7 +38,9 @@ globalThis.fetch = async (url, opts = {}) => {
   const del = path.match(/^\/api\/profile\/(.+)$/);
   if (del && method === "DELETE") {
     if (!serverSim.profiles[del[1]]) return json({ error: "Профиль не найден" }, 404);
+    if (!serverSim.pins[del[1]] || serverSim.pins[del[1]] !== body?.pin) return json({ error: "Ниверный PIN" }, 403);
     delete serverSim.profiles[del[1]];
+    delete serverSim.pins[del[1]];
     return json({ ok: true });
   }
 
@@ -54,6 +56,7 @@ globalThis.fetch = async (url, opts = {}) => {
     case "/api/profile": {
       if (serverSim.profiles[body.id]) return json({ error: "Профиль уже существует" }, 409);
       serverSim.profiles[body.id] = seed(body.name);
+      if (body.pin) serverSim.pins[body.id] = body.pin;
       return json({ ok: true });
     }
     case "/api/topic":
@@ -74,7 +77,7 @@ globalThis.fetch = async (url, opts = {}) => {
 };
 
 const s = await import("../src/store.js");
-const { getUserId, setUserId } = await import("../src/lib/api.js");
+const { getUserId, setUserId, api } = await import("../src/lib/api.js");
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -158,11 +161,21 @@ ok(db.boot === "pick", "без сохранённого id → экран выб
 setUserId("anya");
 await s.init();
 ok(s.getDb().meta.active === "anya", "возврат к Ане через сохранённый id");
-await s.selectProfile("max");
-await s.deleteProfile("max");
+
+const victim = await s.addProfile("Жертва");
+const pins = JSON.parse(store["sf_pins"] || "{}");
+ok(!!pins[victim], "пин владельца сохранён в localStorage");
+let rejected = false;
+try {
+  await api.deleteProfile(victim, "wrong-pin");
+} catch (e) {
+  rejected = true;
+}
+ok(rejected, "удаление с чужим PIN отклонено");
+await s.deleteProfile(victim);
 db = s.getDb();
-ok(!serverSim.profiles.max, "профиль Макса удалён на сервере");
-ok(db.meta.active === "anya" && !!db.anya && db.max === undefined, "после удаления активен оставшийся профиль");
+ok(!serverSim.profiles[victim], "профиль удалён владельцем по PIN");
+ok(db.meta.active === "anya" && !!db.anya, "после удаления активен оставшийся профиль");
 
 function removeStored() {
   try {

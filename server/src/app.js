@@ -6,7 +6,42 @@ import { fallbackTopic, localQuiz, FALLBACK_REPLIES } from "./fallback.js";
 
 export const app = new Hono();
 
-app.use("/api/*", cors({ origin: (o) => o || "*", credentials: false }));
+const allowList = (process.env.ALLOWED_ORIGINS || [
+  "https://slovak-fast.vercel.app",
+  "https://slovak-fast-production.up.railway.app",
+  "http://localhost:5173",
+  "http://localhost:4173",
+]).map((s) => String(s).trim()).filter(Boolean);
+
+app.use(
+  "/api/*",
+  cors({
+    origin: (origin) => (origin && allowList.includes(origin) ? origin : origin ? null : allowList[0]),
+    credentials: false,
+  })
+);
+
+function rateLimit(name, max, windowMs) {
+  const seen = new Map();
+  return async (c, next) => {
+    const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+    const now = Date.now();
+    const k = `${name}:${ip}`;
+    const rec = seen.get(k) || { n: 0, t: now };
+    if (now - rec.t > windowMs) {
+      rec.n = 0;
+      rec.t = now;
+    }
+    rec.n++;
+    seen.set(k, rec);
+    if (rec.n > max) return c.json({ error: "Слишком много запросов. Подожди минуту" }, 429);
+    return next();
+  };
+}
+
+app.use("/api/*", rateLimit("g", 300, 60000));
+app.post("/api/profile", rateLimit("p", 10, 600000));
+app.delete("/api/profile/*", rateLimit("d", 5, 600000));
 
 app.get("/api/health", (c) =>
   c.json({ ok: true, ai: hasKey(), users: listUsers().map((u) => u.name) })
@@ -32,7 +67,7 @@ app.post("/api/profile", async (c) => {
   if (!id) return c.json({ error: "Нет id профиля" }, 400);
   if (!name || name.length < 2) return c.json({ error: "Имя слишком короткое" }, 400);
   try {
-    createProfile(id, name);
+    createProfile(id, name, body.pin);
     return c.json({ ok: true, profile: { id, name } });
   } catch (e) {
     return c.json({ error: e.message }, e.status || 500);
@@ -48,10 +83,11 @@ function profileBundle() {
   return bundle;
 }
 
-app.delete("/api/profile/:id", (c) => {
+app.delete("/api/profile/:id", async (c) => {
   const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
   try {
-    deleteProfile(id);
+    deleteProfile(id, body.pin);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e.message }, e.status || 500);
