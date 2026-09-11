@@ -7,6 +7,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://slovak-fast-production.up.railway.app/api/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": {
         "type": "service",
