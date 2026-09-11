@@ -1,41 +1,20 @@
 import { useState } from "react";
-import { useDb, useProfile, deleteProfile, resetProfile, addProfile, selectProfile } from "../store.js";
+import { useDb, useProfile, deleteProfile, resetProfile, beginSwitch } from "../store.js";
 import Mascot from "../components/Mascot.jsx";
 
 export default function Settings({ setRoute }) {
   const db = useDb();
   const profile = useProfile();
   const [confirmReset, setConfirmReset] = useState(false);
-  const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const existing = db.meta?.profiles || [];
   const active = db.meta?.active;
 
-  const create = async () => {
-    const trimmed = newName.trim();
-    if (trimmed.length < 2 || busy) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await addProfile(trimmed);
-    } catch (e) {
-      setErr(e.message);
-      setBusy(false);
-    }
-  };
-
-  const pick = async (id) => {
-    if (busy || id === active) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await selectProfile(id);
-    } catch (e) {
-      setErr(e.message);
-      setBusy(false);
-    }
+  const switchTo = (id) => {
+    beginSwitch(id, true);
+    setRoute("auth");
   };
 
   const remove = async () => {
@@ -73,7 +52,7 @@ export default function Settings({ setRoute }) {
           {existing.map((u) => (
             <button
               key={u.id}
-              onClick={() => pick(u.id)}
+              onClick={() => switchTo(u.id)}
               disabled={busy || u.id === active}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-colors disabled:opacity-60 ${
                 u.id === active ? "bg-orange-50 border-orange-200" : "bg-stone-50 border-stone-100"
@@ -85,26 +64,23 @@ export default function Settings({ setRoute }) {
                   СЕЙЧАС
                 </span>
               ) : (
-                <span className="text-xs text-stone-400 font-semibold">Переключиться →</span>
+                <span className="text-xs text-stone-400 font-semibold">Войти →</span>
               )}
             </button>
           ))}
         </div>
         <div className="mt-3 flex gap-2">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && create()}
-            maxLength={20}
-            placeholder="Новый профиль"
-            className="flex-1 px-4 py-2.5 rounded-2xl border border-orange-100 bg-white outline-none focus:border-orange-300 text-sm"
-          />
           <button
-            onClick={create}
-            disabled={busy || newName.trim().length < 2}
-            className="px-4 py-2.5 rounded-2xl bg-orange-500 text-white font-bold text-sm disabled:opacity-40"
+            onClick={() => switchTo(null)}
+            className="flex-1 bg-orange-50 text-orange-600 font-bold py-2.5 rounded-2xl border border-orange-100 text-sm"
           >
-            Добавить
+            ＋ Создать профиль
+          </button>
+          <button
+            onClick={() => switchTo(null)}
+            className="flex-1 bg-stone-50 text-stone-600 font-bold py-2.5 rounded-2xl border border-stone-100 text-sm"
+          >
+            Сменить профиль
           </button>
         </div>
         {err && <div className="mt-2 text-sm text-red-500">{err}</div>}

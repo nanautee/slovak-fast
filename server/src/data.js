@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
 const dataDir = () => process.env.DATA_DIR || "./data";
@@ -43,8 +43,8 @@ function legacyProfiles(raw) {
   return out;
 }
 
-function hashPin(pin) {
-  return createHash("sha256").update(String(pin || "")).digest("hex");
+function hashSecret(secret) {
+  return createHash("sha256").update(String(secret || "")).digest("hex");
 }
 
 function load() {
@@ -52,13 +52,17 @@ function load() {
   try {
     if (existsSync(dbFile())) {
       const raw = JSON.parse(readFileSync(dbFile(), "utf8"));
-      db = { profiles: legacyProfiles(raw), pins: (raw && raw.pins) ? raw.pins : {} };
+      db = {
+        profiles: legacyProfiles(raw),
+        pins: (raw && raw.pins) ? raw.pins : {},
+        tokens: (raw && raw.tokens) ? raw.tokens : {},
+      };
       return db;
     }
   } catch (e) {
     console.error("data store corrupted, starting fresh:", e.message);
   }
-  db = { profiles: {}, pins: {} };
+  db = { profiles: {}, pins: {}, tokens: {} };
   return db;
 }
 
@@ -88,30 +92,66 @@ export function getProfile(id) {
   return load().profiles[id] || null;
 }
 
-export function createProfile(id, name, pin) {
+/* ---------- credentials ---------- */
+
+export function hasPassword(id) {
+  return !!load().pins[id];
+}
+
+export function verifyPassword(id, password) {
+  return hashSecret(password) === load().pins[id];
+}
+
+export function createProfile(name, password) {
   const d = load();
-  if (d.profiles[id]) throw Object.assign(new Error("Профиль уже существует"), { status: 409 });
+  const id = randomUUID();
   const key = name.trim().toLowerCase();
   if (Object.values(d.profiles).some((p) => (p.name || "").trim().toLowerCase() === key)) {
     throw Object.assign(new Error("Имя уже занято"), { status: 409 });
   }
   d.profiles[id] = sanitize(seedProfile(name.trim()));
-  if (pin) d.pins[id] = hashPin(pin);
+  d.pins[id] = hashSecret(password || "");
   persist();
   return { id, name: name.trim() };
 }
 
-export function deleteProfile(id, pin) {
-  load();
-  if (!db.profiles[id]) throw Object.assign(new Error("Профиль не найден"), { status: 404 });
-  const stored = db.pins[id];
-  if (!stored) throw Object.assign(new Error("Нет прав на удаление этого профиля"), { status: 401 });
-  if (!pin) throw Object.assign(new Error("Нужен PIN владельца"), { status: 401 });
-  if (hashPin(pin) !== stored) throw Object.assign(new Error("Неверный PIN"), { status: 403 });
-  delete db.profiles[id];
-  delete db.pins[id];
+export function setPassword(id, password) {
+  const d = load();
+  if (!d.profiles[id]) throw Object.assign(new Error("Профиль не найден"), { status: 404 });
+  d.pins[id] = hashSecret(password || "");
   persist();
 }
+
+/* ---------- tokens ---------- */
+
+const MAX_TOKENS = 8;
+
+export function issueToken(id) {
+  const d = load();
+  if (!d.profiles[id]) throw Object.assign(new Error("Профиль не найден"), { status: 404 });
+  const raw = randomBytes(32).toString("hex");
+  const list = d.tokens[id] || [];
+  list.push(hashSecret(raw));
+  d.tokens[id] = list.slice(-MAX_TOKENS);
+  persist();
+  return raw;
+}
+
+export function verifyToken(id, raw) {
+  if (!raw || !id) return false;
+  return (load().tokens[id] || []).includes(hashSecret(raw));
+}
+
+export function clearToken(id, raw) {
+  const d = load();
+  if (!raw || !d.tokens[id]) return;
+  const list = (d.tokens[id] || []).filter((h) => h !== hashSecret(raw));
+  if (list.length) d.tokens[id] = list;
+  else delete d.tokens[id];
+  persist();
+}
+
+/* ---------- profiles ---------- */
 
 export function usersMeta() {
   return { profiles: listUsers() };
@@ -124,4 +164,14 @@ export function setProfile(id, profile) {
   db.profiles[id] = sanitize({ ...(profile || {}), name });
   persist();
   return db.profiles[id];
+}
+
+export function deleteProfile(id, raw) {
+  load();
+  if (!db.profiles[id]) throw Object.assign(new Error("Профиль не найден"), { status: 404 });
+  if (!verifyToken(id, raw)) throw Object.assign(new Error("Нет прав на удаление этого профиля"), { status: 401 });
+  delete db.profiles[id];
+  delete db.pins[id];
+  delete db.tokens[id];
+  persist();
 }

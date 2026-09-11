@@ -9,48 +9,50 @@ async function request(path, options = {}) {
       const j = await r.json();
       if (j && j.error) msg = j.error;
     } catch (e) {}
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = r.status;
+    throw err;
   }
   return r.json();
 }
 
 export const USER_KEY = "sf_user";
-export const PIN_KEY = "sf_pins";
+export const TOKEN_KEY = "sf_token";
 
 export function getUserId() {
-  try {
-    return localStorage.getItem(USER_KEY) || "";
-  } catch (e) {
-    return "";
-  }
+  try { return localStorage.getItem(USER_KEY) || ""; } catch { return ""; }
 }
 export function setUserId(id) {
-  try {
-    if (id) localStorage.setItem(USER_KEY, id);
-    else localStorage.removeItem(USER_KEY);
-  } catch (e) {}
+  try { if (id) localStorage.setItem(USER_KEY, id); else localStorage.removeItem(USER_KEY); } catch {}
 }
-export function getPins() {
-  try {
-    return JSON.parse(localStorage.getItem(PIN_KEY) || "{}");
-  } catch (e) {
-    return {};
-  }
+export function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
 }
-export function setPins(pins) {
-  try {
-    localStorage.setItem(PIN_KEY, JSON.stringify(pins));
-  } catch (e) {}
+export function setToken(t) {
+  try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {}
 }
+export function clearToken() {
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+
 export function uid() {
   return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
 }
 
+function authHeaders() {
+  return { "x-user-id": getUserId(), "x-auth-token": getToken() };
+}
+
 export const api = {
-  state: () => request("/api/state"),
-  createProfile: (id, name, pin) => request("/api/profile", { method: "POST", body: JSON.stringify({ id, name, pin }) }),
-  deleteProfile: (id, pin) => request(`/api/profile/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ pin }) }),
-  save: (id, profile) => request("/api/state", { method: "PUT", body: JSON.stringify({ id, ...profile }) }),
+  users: () => request("/api/users"),
+  register: (name, password) => request("/api/auth/register", { method: "POST", body: JSON.stringify({ name, password }) }),
+  login: (id, password) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ id, password }) }),
+  setPassword: (password) => request("/api/auth/set-password", { method: "POST", body: JSON.stringify({ password }), headers: authHeaders() }),
+
+  state: () => request("/api/state", { headers: authHeaders() }),
+  save: (id, profile) => request("/api/state", { method: "PUT", body: JSON.stringify({ id, ...profile }), headers: authHeaders() }),
+  deleteProfile: (id) => request(`/api/profile/${encodeURIComponent(id)}`, { method: "DELETE", headers: authHeaders() }),
+
   topic: (dayNumber, seenTopics) => request("/api/topic", { method: "POST", body: JSON.stringify({ dayNumber, seenTopics }) }),
   quiz: (topic) => request("/api/quiz", { method: "POST", body: JSON.stringify({ topic }) }),
   chat: (topic, msgs, opener, dayNumber) =>

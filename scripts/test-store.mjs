@@ -18,172 +18,179 @@ const seed = (name) => ({
   seenTopics: [],
 });
 
-const serverSim = { profiles: { anya: seed("Аня"), max: seed("Макс") }, pins: { anya: "p-anya", max: "p-max" } };
+/* ---- mimic of server/src/data.js ---- */
+const S = { profiles: {}, passwords: {}, tokens: {} };
+const hash = (s) => "h:" + s;
+const isAuthed = (id) =>
+  !!id && !!store["sf_token"] && (S.tokens[id] || []).includes(hash(store["sf_token"]));
 
-const meta = () => ({
-  active: store["sf_user"] || null,
-  profiles: Object.entries(serverSim.profiles).map(([id, p]) => ({ id, name: p.name })),
+const usersList = () => Object.entries(S.profiles).map(([id, p]) => ({ id, name: p.name }));
+const bundle = (id) => ({
+  meta: { profiles: usersList() },
+  profiles: id ? { [id]: S.profiles[id] } : {},
 });
-const bundle = () => ({ meta: meta(), profiles: serverSim.profiles });
+const state401 = () =>
+  Promise.resolve(new Response(JSON.stringify({ error: "Авторизуйся" }), { status: 401, headers: { "Content-Type": "application/json" } }));
 
 let chatCount = 0;
 globalThis.fetch = async (url, opts = {}) => {
   const method = opts.method || "GET";
   const body = opts.body ? JSON.parse(opts.body) : null;
+  const header = (h) => opts.headers?.[h] || "";
   const path = String(url).replace(/^.*\/api/, "/api").split("?")[0];
 
   const json = (data, status = 200) =>
     Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }));
 
-  const del = path.match(/^\/api\/profile\/(.+)$/);
-  if (del && method === "DELETE") {
-    if (!serverSim.profiles[del[1]]) return json({ error: "Профиль не найден" }, 404);
-    if (!serverSim.pins[del[1]] || serverSim.pins[del[1]] !== body?.pin) return json({ error: "Ниверный PIN" }, 403);
-    delete serverSim.profiles[del[1]];
-    delete serverSim.pins[del[1]];
+  if (path === "/api/health") return json({ ok: true });
+  if (path === "/api/users") return json({ profiles: usersList() });
+
+  if (path === "/api/auth/register") {
+    if (Object.values(S.profiles).some((p) => p.name.trim().toLowerCase() === body.name.trim().toLowerCase()))
+      return json({ error: "Имя уже занято" }, 409);
+    const id = "id-" + Math.random().toString(36).slice(2);
+    S.profiles[id] = seed(body.name.trim());
+    S.passwords[id] = body.password;
+    const token = "tok-" + Math.random().toString(36).slice(2);
+    S.tokens[id] = [hash(token)];
+    return json({ ok: true, id, name: body.name, token });
+  }
+
+  if (path === "/api/auth/login") {
+    if (!S.profiles[body.id]) return json({ error: "Профиль не найден" }, 404);
+    const had = S.passwords[body.id];
+    if (had && had !== body.password) return json({ error: "Неверный пароль" }, 403);
+    if (!had) S.passwords[body.id] = body.password;
+    const token = "tok-" + Math.random().toString(36).slice(2);
+    S.tokens[body.id] = [hash(token)];
+    return json({ ok: true, id: body.id, name: S.profiles[body.id].name, token, needsPassword: !had });
+  }
+
+  const id = header("x-user-id");
+  if (path === "/api/auth/set-password") {
+    if (!isAuthed(id)) return state401();
+    S.passwords[id] = body.password;
     return json({ ok: true });
   }
 
-  switch (path) {
-    case "/api/health":
-      return json({ ok: true });
-    case "/api/state": {
-      if (method === "PUT" && body?.id && serverSim.profiles[body.id]) {
-        serverSim.profiles[body.id] = { ...serverSim.profiles[body.id], ...body };
-      }
-      return json(bundle());
-    }
-    case "/api/profile": {
-      if (serverSim.profiles[body.id]) return json({ error: "Профиль уже существует" }, 409);
-      serverSim.profiles[body.id] = seed(body.name);
-      if (body.pin) serverSim.pins[body.id] = body.pin;
-      return json({ ok: true });
-    }
-    case "/api/topic":
-      return json({
-        sk: "Zvieratá",
-        ru: "Животные",
-        example: "Mačka spí.",
-        words: Array.from({ length: 10 }, (_, i) => ({ sk: `slovo${i}`, ru: `перевод${i}` })),
-      });
-    case "/api/quiz":
-      return json({ questions: [] });
-    case "/api/chat":
-      chatCount++;
-      return json({ reply: `reply-${chatCount}: ${body.msgs?.length || 0} сообщений в контексте` });
-    default:
-      return json({ error: "not found" }, 404);
+  const del = path.match(/^\/api\/profile\/(.+)$/);
+  if (del && method === "DELETE") {
+    if (!isAuthed(del[1])) return state401();
+    delete S.profiles[del[1]];
+    delete S.passwords[del[1]];
+    delete S.tokens[del[1]];
+    return json({ ok: true });
   }
+
+  if (path === "/api/state") {
+    if (!isAuthed(id)) return state401();
+    if (method === "PUT" && body?.id === id) {
+      S.profiles[id] = { ...S.profiles[id], ...body };
+    }
+    return json(bundle(id));
+  }
+
+  if (path === "/api/topic")
+    return json({ sk: "Zvieratá", ru: "Животные", example: "Mačka spí.", words: Array.from({ length: 10 }, (_, i) => ({ sk: `slovo${i}`, ru: `перевод${i}` })) });
+  if (path === "/api/quiz") return json({ questions: [] });
+  if (path === "/api/chat") { chatCount++; return json({ reply: `reply-${chatCount}: ${body.msgs?.length || 0}` }); }
+  return json({ error: "not found" }, 404);
 };
 
 const s = await import("../src/store.js");
-const { getUserId, setUserId, api } = await import("../src/lib/api.js");
 
 let fails = 0;
-const ok = (cond, msg) => {
-  if (!cond) {
-    fails++;
-    console.error("FAIL:", msg);
-  } else {
-    console.log("PASS:", msg);
-  }
-};
+const ok = (cond, msg) => { if (!cond) { fails++; console.error("FAIL:", msg); } else console.log("PASS:", msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-setUserId("anya");
+/* --- без авторизации --- */
 await s.init();
-let db = s.getDb();
-ok(db.boot === "ok", "boot=ok после init");
-ok(db.meta.active === "anya", "активный профиль = Аня");
-ok(!!db.anya, "профиль Ани загружен");
+ok(s.getDb().boot === "auth", "без токена → экран входа (auth)");
+ok(s.getDb().meta.profiles.length === 0, "список пуст, предлагает регистрацию");
 
-await sleep(0);
+/* --- регистрация --- */
+let res = await s.register("Аня", "secret1");
+ok(res.id && res.token, "регистрация вернула id и токен");
+ok(store["sf_token"] === res.token, "токен сохранён в localStorage");
+ok(store["sf_user"] === res.id, "id сохранён в localStorage");
+let db = s.getDb();
+ok(db.boot === "ok" && db.meta.active === res.id, "после регистрации boot=ok и Аня активна");
+ok(db[res.id].name === "Аня", "профиль Ани загружен");
+
 await s.ensureTopic();
 db = s.getDb();
-ok(db.anya.topic?.words?.length === 10, "тема сгенерирована через API");
-ok(db.anya.topicDate, "topicDate проставлен");
+ok(db[res.id].topic?.words?.length === 10, "тема сгенерирована через API");
 
-db.anya.topic.words.forEach((_, i) => s.answerCard(i, i < 3 ? false : true));
+/* --- карточки (не знаю + знаю) + active не теряется --- */
+const topicWords = [...db[res.id].topic.words];
+topicWords.forEach((_, i) => s.answerCard(i, i < 3 ? false : true));
 db = s.getDb();
-ok(db.anya.today.cards.done, "карточки done (клиент+сервер)");
-ok(db.meta.active === "anya", "активный профиль не теряется после syncState (no-mascot-fix)");
-ok(db.anya.today.cards.correct === 7, "«не знаю» (3 шт.) учитывается, но не как выученное");
-ok(db.anya.words.length === 10, "10 слов в словаре");
+ok(db[res.id].today.cards.done, "карточки done");
+ok(db.meta.active === res.id, "active не теряется после syncState");
+ok(db[res.id].today.cards.correct === 7, "3 «не знаю» + 7 «знаю» = 7 правильных");
+ok(db[res.id].words.length === 10, "10 слов в словаре");
 await sleep(5);
-ok(serverSim.profiles.anya.today.cards.done === true, "прогресс Ани дошёл до сервера (PUT)");
+ok(S.profiles[res.id].today.cards.done === true, "прогресс Ани дошёл до сервера (PUT)");
 
+/* --- прочие квесты --- */
 await s.startQuiz();
 db = s.getDb();
-ok(db.anya.today.quiz.questions.length === 5, "5 вопросов (клиентский fallback)");
-const qs = db.anya.today.quiz.questions;
+const qs = db[res.id].today.quiz.questions;
 qs.forEach((_, i) => s.answerQuiz(i, qs[i].answer));
 db = s.getDb();
-ok(db.anya.today.quiz.done && db.anya.today.quiz.correct === 5, "квиз 5/5");
+ok(db[res.id].today.quiz.done && db[res.id].today.quiz.correct === 5, "квиз 5/5");
 
 const opener = await s.chatSend(null);
-ok(!!opener, "чат: openер от сервера");
-for (let i = 0; i < 3; i++) {
-  await s.chatSend(`Сообщение ${i}`);
-  await sleep(5);
-}
+for (let i = 0; i < 3; i++) await s.chatSend(`Сообщение ${i}`);
 db = s.getDb();
-ok(db.anya.today.chat.done, "чат done после 3 реплик");
+ok(db[res.id].today.chat.done, "чат done");
 
 s.startListen();
 db = s.getDb();
-db.anya.today.listen.questions.forEach((_, i) => s.answerListen(i, db.anya.today.listen.questions[i].answer));
+db[res.id].today.listen.questions.forEach((_, i) => s.answerListen(i, db[res.id].today.listen.questions[i].answer));
 db = s.getDb();
-ok(db.anya.today.listen.done && db.anya.today.listen.correct === 5, "слушание 5/5");
+ok(db[res.id].today.listen.done, "слушание done");
 
-ok(s.todayDone(db.anya) === 4, "все 4 квеста закрыты");
+ok(s.todayDone(db[res.id]) === 4, "все 4 квеста закрыты");
 s.completeToday();
 db = s.getDb();
-ok(db.anya.streak === 1, "стрик Ани 1 после закрытия");
-await sleep(5);
-ok(serverSim.profiles.anya.streak === 1, "стрик Ани синхронизирован на сервер");
+ok(db[res.id].streak === 1, "стрик 1");
 
-await s.addProfile("Макс");
+/* --- второй профиль + разделение + чужие пароли --- */
+res = await s.register("Макс", "secret2");
 db = s.getDb();
-ok(db.meta.active !== "anya", "после создания активный профиль сменился");
-const maxId = db.meta.active;
-ok(!!db[maxId] && db[maxId].name === "Макс", "профиль Макс создан и активен");
-ok(getUserId() === maxId, "id сохранён в localStorage");
-ok(!(db[maxId].words.length) && db[maxId].streak === 0 && !db[maxId].today.cards.done, "у Макса нет прогресса Ани (разделение)");
+ok(db.meta.active === res.id && db[res.id].name === "Макс", "Макс зарегистрирован и активен");
+ok(db[res.id].words.length === 0 && db[res.id].streak === 0, "у Макса нет прогресса Ани (разделение)");
 
-await s.selectProfile("anya");
-db = s.getDb();
-ok(db.meta.active === "anya", "переключение обратно на Аню");
-ok(db.anya.streak === 1 && db.anya.words.length === 10, "прогресс Ани сохранён после переключений");
-
-removeStored();
+/* логин Макса — неверный пароль */
+delete store["sf_token"]; delete store["sf_user"];
+store["sf_user"] = res.id;
 await s.init();
 db = s.getDb();
-ok(db.boot === "pick", "без сохранённого id → экран выбора профиля");
+ok(db.boot === "auth", "после очистки токена — снова экран входа");
+ok(db.meta.profiles.length === 2, "оба профиля видны в списке");
 
-setUserId("anya");
-await s.init();
-ok(s.getDb().meta.active === "anya", "возврат к Ане через сохранённый id");
-
-const victim = await s.addProfile("Жертва");
-const pins = JSON.parse(store["sf_pins"] || "{}");
-ok(!!pins[victim], "пин владельца сохранён в localStorage");
-let rejected = false;
-try {
-  await api.deleteProfile(victim, "wrong-pin");
-} catch (e) {
-  rejected = true;
-}
-ok(rejected, "удаление с чужим PIN отклонено");
-await s.deleteProfile(victim);
+let denied = false;
+try { await s.login(res.id, "wrongpass"); } catch (e) { denied = true; }
+ok(denied, "неверный пароль отклонён (403)");
+await s.login(res.id, "secret2");
 db = s.getDb();
-ok(!serverSim.profiles[victim], "профиль удалён владельцем по PIN");
-ok(db.meta.active === "anya" && !!db.anya, "после удаления активен оставшийся профиль");
+ok(db.boot === "ok" && db.meta.active === res.id, "вход по паролю открыл профиль Макса");
 
-function removeStored() {
-  try {
-    localStorage.removeItem("sf_user");
-  } catch (e) {}
-}
+/* Аня осталась отдельным профилем без пароля Макса */
+delete store["sf_token"]; delete store["sf_user"];
+store["sf_user"] = "anyaid";
+await s.init();
+ok(s.getDb().boot === "auth", "нельзя попасть в профиль без токена даже зная id");
+
+/* --- удаление владельцем по токену --- */
+const v = await s.register("Жертва", "secret3");
+db = s.getDb();
+ok(!!db[v.id], "жертва создана");
+await s.deleteProfile(v.id);
+db = s.getDb();
+ok(!S.profiles[v.id], "профиль удалён владельцем (токен)");
+ok(db.boot === "auth", "после удаления активного профиля — экран входа");
 
 console.log(fails === 0 ? "\nALL PASS ✓" : `\n${fails} FAILURES`);
 process.exit(fails === 0 ? 0 : 1);

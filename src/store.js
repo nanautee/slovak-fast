@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, getUserId, setUserId, getPins, setPins, uid } from "./lib/api.js";
+import { api, getUserId, setUserId, getToken, setToken, clearToken } from "./lib/api.js";
 
 const INTERVALS = [1, 2, 4, 7, 15, 30, 60];
 
@@ -38,28 +38,23 @@ const defaultProfile = () => ({
 
 const emptyDb = () => ({
   boot: "idle",
-  meta: { profiles: [], active: null },
+  meta: { profiles: [], active: null, pendingId: null, fromApp: false },
 });
 
 let db = emptyDb();
 
 const listeners = new Set();
-function notify() {
-  listeners.forEach((l) => l());
-}
+function notify() { listeners.forEach((l) => l()); }
 function mutate(fn) {
   const active = db.meta.active;
-  if (!active) {
-    notify();
-    return;
-  }
+  if (!active) { notify(); return; }
   const next = fn(structuredClone(db[active]));
   db = { ...db, [active]: valid(next) };
   notify();
 }
 function hydrate(payload, active) {
   const meta = payload.meta || { profiles: [], active: null };
-  db = { boot: "ok", meta: { ...meta, active: active || meta.active || null } };
+  db = { boot: "ok", meta: { ...db.meta, ...meta, active: active || meta.active || null } };
   for (const [id, profile] of Object.entries(payload.profiles || {})) db[id] = valid(profile);
 }
 
@@ -75,10 +70,7 @@ function valid(p) {
 }
 
 export const getDb = () => db;
-export const subscribeDb = (cb) => {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-};
+export const subscribeDb = (cb) => { listeners.add(cb); return () => listeners.delete(cb); };
 export const useDb = () => useSyncExternalStore(subscribeDb, getDb);
 export const useProfile = () => {
   const d = useDb();
@@ -96,14 +88,7 @@ function rollover(p) {
   if (p.topicDate === t) return p;
   let streak = p.streak || 0;
   if (p.lastDoneDate && p.lastDoneDate !== t && p.lastDoneDate !== yesterdayStr()) streak = 0;
-  return {
-    ...p,
-    dayNumber: (p.dayNumber || 1) + 1,
-    streak,
-    topicDate: t,
-    topic: null,
-    today: emptyToday(),
-  };
+  return { ...p, dayNumber: (p.dayNumber || 1) + 1, streak, topicDate: t, topic: null, today: emptyToday() };
 }
 
 export function todayDone(p) {
@@ -111,9 +96,7 @@ export function todayDone(p) {
   return [t.cards.done, t.chat.done, t.quiz.done, t.listen.done].filter(Boolean).length;
 }
 
-export function todayTotal() {
-  return 4;
-}
+export function todayTotal() { return 4; }
 
 export function questList(p) {
   const t = p.today || emptyToday();
@@ -128,15 +111,11 @@ export function questList(p) {
 }
 
 /* ---------- sync ---------- */
+
 const FALLBACK_TOPICS = [
-  ["Kuchyňa", "Кухня"],
-  ["Zvieratá", "Животные"],
-  ["Doprava", "Транспорт"],
-  ["V kaviarni", "В кафе"],
-  ["Oblečenie", "Одежда"],
-  ["Peniaze", "Деньги"],
-  ["Dom", "Дом"],
-  ["Počasie", "Погода"],
+  ["Kuchyňa", "Кухня"], ["Zvieratá", "Животные"], ["Doprava", "Транспорт"],
+  ["V kaviarni", "В кафе"], ["Oblečenie", "Одежда"], ["Peniaze", "Деньги"],
+  ["Dom", "Дом"], ["Počasie", "Погода"],
 ];
 
 async function syncState() {
@@ -144,73 +123,93 @@ async function syncState() {
   if (!active) return;
   try {
     hydrate(await api.save(active, db[active]), active);
-  } catch (e) {}
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) {
+      forceAuth();
+    }
+  }
 }
+
+function forceAuth() {
+  clearToken(); setUserId("");
+  db = { ...emptyDb(), meta: { ...emptyDb().meta, profiles: db.meta.profiles || [] }, boot: "auth" };
+  notify();
+}
+
+/* ---------- init ---------- */
 
 let booting = false;
 export async function init() {
   if (booting) return;
   booting = true;
   try {
-    const payload = await api.state();
     const stored = getUserId();
-    hydrate(payload, stored);
-    if (!db.meta.active || !db[db.meta.active]) {
-      if (stored) {
-        hydrate(await api.save(stored, defaultProfile()));
-      } else {
-        db = { ...db, boot: "pick" };
+    const tok = getToken();
+    if (stored && tok) {
+      try {
+        const payload = await api.state();
+        hydrate(payload, stored);
         notify();
+        return;
+      } catch (e) {
+        if (e.status === 401 || e.status === 403) { clearToken(); setUserId(""); }
+        else { db = { ...emptyDb(), boot: "offline" }; notify(); return; }
       }
     }
-  } catch (e) {
-    db = { ...emptyDb(), boot: "offline" };
-    notify();
-  } finally {
-    booting = false;
-  }
+    try {
+      const users = await api.users();
+      db = { ...emptyDb(), meta: { profiles: users.profiles || [], active: null, pendingId: null, fromApp: false }, boot: "auth" };
+    } catch (e) {
+      db = { ...emptyDb(), boot: "offline" };
+    }
+  } finally { booting = false; notify(); }
 }
 
-export async function addProfile(name) {
-  const id = uid();
-  const pin = uid();
-  await api.createProfile(id, name.trim(), pin);
-  const pins = getPins();
-  pins[id] = pin;
-  setPins(pins);
-  setUserId(id);
+/* ---------- auth ---------- */
+
+export async function register(name, password) {
+  const res = await api.register(name, password);
+  setToken(res.token); setUserId(res.id);
+  hydrate(await api.state(), res.id);
+  notify();
+  return res;
+}
+
+export async function login(id, password) {
+  const res = await api.login(id, password);
+  setToken(res.token); setUserId(id);
   hydrate(await api.state(), id);
   notify();
-  return id;
+  return res;
 }
 
-export async function selectProfile(id) {
-  setUserId(id);
-  hydrate(await api.state(), id);
+export async function setPassword(password) {
+  return api.setPassword(password);
+}
+
+export function beginSwitch(id, fromApp = false) {
+  db = { ...db, meta: { ...db.meta, pendingId: id || null, fromApp: !!fromApp } };
   notify();
 }
 
 export async function deleteProfile(id) {
-  const pins = getPins();
-  await api.deleteProfile(id, pins[id]);
-  delete pins[id];
-  setPins(pins);
-  setUserId("");
-  try {
-    const payload = await api.state();
-    const rest = payload.meta.profiles || [];
-    if (rest.length) {
-      setUserId(rest[0].id);
-      hydrate(payload, rest[0].id);
-    } else {
-      db = { ...emptyDb(), boot: "pick" };
-      notify();
-    }
-  } catch (e) {
-    db = { ...emptyDb(), boot: "offline" };
-    notify();
+  try { await api.deleteProfile(id); } catch (e) {
+    if (e.status === 401 || e.status === 403) { forceAuth(); return; }
   }
+  clearToken(); setUserId("");
+  try {
+    const users = await api.users();
+    db = { ...emptyDb(), meta: { ...emptyDb().meta, profiles: users.profiles || [] }, boot: "auth" };
+  } catch (e) { db = { ...emptyDb(), boot: "offline" }; }
+  notify();
 }
+
+export async function resetProfile() {
+  mutate(() => defaultProfile());
+  await syncState();
+}
+
+/* ---------- topic ---------- */
 
 export async function ensureTopic() {
   mutate((p) => rollover(p));
@@ -218,47 +217,32 @@ export async function ensureTopic() {
   if (!p) return;
   if (p.topic) return;
   let topic = null;
-  try {
-    topic = await api.topic(p.dayNumber || 1, p.seenTopics || []);
-  } catch (e) {}
+  try { topic = await api.topic(p.dayNumber || 1, p.seenTopics || []); } catch (e) {}
   if (!topic || !topic.words?.length) {
     const n = (p.dayNumber || 1) - 1;
     const [sk, ru] = FALLBACK_TOPICS[n % FALLBACK_TOPICS.length];
     topic = {
-      sk,
-      ru,
-      example: "",
+      sk, ru, example: "",
       words: [
-        { sk: "mačka", ru: "кошка" },
-        { sk: "pes", ru: "собака" },
-        { sk: "dom", ru: "дом" },
-        { sk: "voda", ru: "вода" },
-        { sk: "chlieb", ru: "хлеб" },
-        { sk: "kava", ru: "кофе" },
-        { sk: "auto", ru: "машина" },
-        { sk: "ulica", ru: "улица" },
-        { sk: "strom", ru: "дерево" },
+        { sk: "mačka", ru: "кошка" }, { sk: "pes", ru: "собака" }, { sk: "dom", ru: "дом" },
+        { sk: "voda", ru: "вода" }, { sk: "chlieb", ru: "хлеб" }, { sk: "kava", ru: "кофе" },
+        { sk: "auto", ru: "машина" }, { sk: "ulica", ru: "улица" }, { sk: "strom", ru: "дерево" },
         { sk: "slnko", ru: "солнце" },
       ],
     };
   }
   mutate((pr) => {
     if (pr.topic) return pr;
-    return {
-      ...pr,
-      topic,
-      seenTopics: pr.seenTopics.includes(topic.sk) ? pr.seenTopics : [...pr.seenTopics, topic.sk],
-    };
+    return { ...pr, topic, seenTopics: pr.seenTopics.includes(topic.sk) ? pr.seenTopics : [...pr.seenTopics, topic.sk] };
   });
   syncState();
 }
 
 /* ---------- Cards ---------- */
+
 function gradeWord(list, w, known) {
   const exists = list.some((x) => x.sk === w.sk);
-  if (!exists) {
-    return [...list, { sk: w.sk, ru: w.ru, box: known ? 1 : 0, next: dayAhead(known ? INTERVALS[0] : 1), correct: known ? 1 : 0 }];
-  }
+  if (!exists) return [...list, { sk: w.sk, ru: w.ru, box: known ? 1 : 0, next: dayAhead(known ? INTERVALS[0] : 1), correct: known ? 1 : 0 }];
   return list.map((x) => {
     if (x.sk !== w.sk) return x;
     if (!known) return { ...x, box: 0, next: dayAhead(1) };
@@ -284,31 +268,22 @@ export function answerCard(index, known) {
 }
 
 /* ---------- Chat ---------- */
+
 export async function chatSend(text) {
   let p = db[db.meta.active];
   if (!text && !p.today.chat.opener) {
     let reply = "";
-    try {
-      reply = (await api.chat(p.topic, [], "", p.dayNumber)).reply;
-    } catch (e) {}
+    try { reply = (await api.chat(p.topic, [], "", p.dayNumber)).reply; } catch (e) {}
     const opener = reply || fallbackReply(p, 0);
-    mutate((pr) => ({
-      ...pr,
-      today: { ...pr.today, chat: { ...pr.today.chat, msgs: opener ? [{ role: "assistant", content: opener }] : [], opener } },
-    }));
+    mutate((pr) => ({ ...pr, today: { ...pr.today, chat: { ...pr.today.chat, msgs: opener ? [{ role: "assistant", content: opener }] : [], opener } } }));
     syncState();
     return opener;
   }
-
   const msgs = text ? [...p.today.chat.msgs, { role: "user", content: text }] : p.today.chat.msgs;
   if (text) mutate((pr) => ({ ...pr, today: { ...pr.today, chat: { ...pr.today.chat, msgs } } }));
-
   let reply = "";
-  try {
-    reply = (await api.chat(p.topic, msgs, p.today.chat.opener, p.dayNumber)).reply;
-  } catch (e) {}
+  try { reply = (await api.chat(p.topic, msgs, p.today.chat.opener, p.dayNumber)).reply; } catch (e) {}
   if (!reply) reply = fallbackReply(p, msgs.length);
-
   const newMsgs = [...msgs, { role: "assistant", content: reply }];
   const lines = newMsgs.filter((m) => m.role === "user").length;
   mutate((pr) => ({ ...pr, today: { ...pr.today, chat: { ...pr.today.chat, msgs: newMsgs, lines, done: lines >= 3 } } }));
@@ -317,12 +292,8 @@ export async function chatSend(text) {
 }
 
 function fallbackReply(p, n) {
-  const pool = [
-    "Výborne! A čo ešte chceš povedať?",
-    "Rozumiem! Dnes je téma " + (p.topic?.ru || "") + ".",
-    "Super! Pokračuj, polož mi otázku po slovensky!",
-    "Skvelé slovo! Skús ho použiť v odpovedi.",
-  ];
+  const pool = ["Výborne! A čo ešte chceš povedať?", "Rozumiem! Dnes je téma " + (p.topic?.ru || "") + ".",
+    "Super! Pokračuj, polož mi otázku po slovensky!", "Skvelé slovo! Skús ho použiť v odpovedi."];
   return pool[(p.dayNumber + n) % pool.length];
 }
 
@@ -332,12 +303,11 @@ export function chatReset() {
 }
 
 /* ---------- Quiz ---------- */
+
 export async function startQuiz() {
   let p = db[db.meta.active];
   let questions = [];
-  try {
-    questions = (await api.quiz(p.topic)).questions;
-  } catch (e) {}
+  try { questions = (await api.quiz(p.topic)).questions; } catch (e) {}
   if (!questions.length) questions = localQuiz(p.topic);
   if (!questions.length) return false;
   mutate((pr) => ({
@@ -350,18 +320,14 @@ export async function startQuiz() {
 
 function shuffle(arr) {
   const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
 
 function localQuiz(topic) {
   if (!topic || !topic.words?.length) return [];
-  const pool = shuffle(topic.words);
-  const picked = pool.slice(0, Math.min(5, topic.words.length));
-  return picked.map((w) => {
+  const pool = shuffle(topic.words).slice(0, Math.min(5, topic.words.length));
+  return pool.map((w) => {
     const wrong = shuffle(topic.words.filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
     const options = shuffle([w.ru, ...wrong]);
     return { q: `Как переводится «${w.sk}»?`, options, answer: options.indexOf(w.ru) };
@@ -376,28 +342,22 @@ export function answerQuiz(index, choice) {
     answers[index] = choice === q.answer;
     const correct = answers.filter(Boolean).length;
     const answered = index + 1;
-    return {
-      ...p,
-      today: { ...p.today, quiz: { ...qz, answers, correct, answered, done: answered >= qz.questions.length } },
-    };
+    return { ...p, today: { ...p.today, quiz: { ...qz, answers, correct, answered, done: answered >= qz.questions.length } } };
   });
   syncState();
 }
 
 /* ---------- Listening ---------- */
+
 export function startListen() {
   mutate((p) => {
-    const pool = shuffle(p.topic.words || []);
-    const picked = pool.slice(0, Math.min(5, (p.topic.words || []).length));
-    const questions = picked.map((w) => {
+    const pool = shuffle(p.topic.words || []).slice(0, Math.min(5, (p.topic.words || []).length));
+    const questions = pool.map((w) => {
       const wrong = shuffle((p.topic.words || []).filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
       const options = shuffle([w.ru, ...wrong]);
       return { sk: w.sk, ru: w.ru, options, answer: options.indexOf(w.ru) };
     });
-    return {
-      ...p,
-      today: { ...p.today, listen: { done: false, correct: 0, total: questions.length, questions, answered: 0 } },
-    };
+    return { ...p, today: { ...p.today, listen: { done: false, correct: 0, total: questions.length, questions, answered: 0 } } };
   });
   syncState();
 }
@@ -408,23 +368,13 @@ export function answerListen(index, choice) {
     const q = li.questions[index];
     const isGood = choice === q.answer;
     const answered = index + 1;
-    return {
-      ...p,
-      today: {
-        ...p.today,
-        listen: {
-          ...li,
-          correct: li.correct + (isGood ? 1 : 0),
-          answered,
-          done: answered >= li.questions.length,
-        },
-      },
-    };
+    return { ...p, today: { ...p.today, listen: { ...li, correct: li.correct + (isGood ? 1 : 0), answered, done: answered >= li.questions.length } } };
   });
   syncState();
 }
 
 /* ---------- Day ---------- */
+
 export function completeToday() {
   mutate((p) => {
     const t = todayStr();
@@ -436,10 +386,4 @@ export function completeToday() {
     return { ...p, streak, lastDoneDate: t, history };
   });
   syncState();
-}
-
-/* ---------- Profile ---------- */
-export async function resetProfile() {
-  mutate(() => defaultProfile());
-  await syncState();
 }

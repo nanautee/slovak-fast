@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { init, ensureTopic, todayDone, todayTotal, useDb, useProfile, levelFor, selectProfile } from "./store.js";
+import { init, ensureTopic, todayDone, todayTotal, useDb, useProfile, levelFor, beginSwitch } from "./store.js";
 import { warmVoices, hasSkVoice } from "./lib/tts.js";
 
 import Mascot from "./components/Mascot.jsx";
@@ -12,7 +12,7 @@ import Listen from "./pages/Listen.jsx";
 import Progress from "./pages/Progress.jsx";
 import Dict from "./pages/Dict.jsx";
 import Settings from "./pages/Settings.jsx";
-import Profiles from "./pages/Profiles.jsx";
+import AuthScreen from "./pages/AuthScreen.jsx";
 
 export default function App() {
   const db = useDb();
@@ -23,28 +23,26 @@ export default function App() {
 
   useEffect(() => {
     warmVoices();
-    init().then(() => {
-      ensureTopic().finally(() => setReady(true));
-    });
+    init().then(() => ensureTopic().finally(() => setReady(true)));
     const t = setTimeout(() => hasSkVoice(), 800);
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    if (db.boot === "ok" && route === "auth") setRoute("today");
+  }, [db.boot, route]);
+
+  if (db.boot === "auth") return <AuthScreen setRoute={setRoute} />;
+
   if (!profile) {
-    if (db.boot === "pick") return <Profiles />;
     if (db.boot === "offline")
       return (
         <div className="min-h-full flex flex-col items-center justify-center gap-4 px-6">
           <Mascot size={90} />
           <div className="font-bold text-stone-700">Нет связи с сервером</div>
-          <div className="text-sm text-stone-400 text-center">
-            Не могу достучаться до бэкенда.
-          </div>
+          <div className="text-sm text-stone-400 text-center">Не могу достучаться до бэкенда.</div>
           <button
-            onClick={() => {
-              setReady(false);
-              init().then(() => ensureTopic().finally(() => setReady(true)));
-            }}
+            onClick={() => { setReady(false); init().then(() => ensureTopic().finally(() => setReady(true))); }}
             className="px-8 py-3 rounded-2xl bg-orange-500 text-white font-bold"
           >
             Попробовать ещё раз
@@ -61,22 +59,15 @@ export default function App() {
   const page = (() => {
     const props = { setRoute };
     switch (route) {
-      case "cards":
-        return <Cards {...props} />;
-      case "chat":
-        return <Chat {...props} />;
-      case "quiz":
-        return <Quiz {...props} />;
-      case "listen":
-        return <Listen {...props} />;
-      case "progress":
-        return <Progress {...props} />;
-      case "dict":
-        return <Dict {...props} />;
-      case "settings":
-        return <Settings {...props} />;
-      default:
-        return <Today {...props} />;
+      case "cards": return <Cards {...props} />;
+      case "chat": return <Chat {...props} />;
+      case "quiz": return <Quiz {...props} />;
+      case "listen": return <Listen {...props} />;
+      case "progress": return <Progress {...props} />;
+      case "dict": return <Dict {...props} />;
+      case "settings": return <Settings {...props} />;
+      case "auth": return <AuthScreen setRoute={setRoute} />;
+      default: return <Today {...props} />;
     }
   })();
 
@@ -107,32 +98,23 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setProfMenu(false)} />
                   <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl border border-orange-100 shadow-xl z-50 overflow-hidden">
-                    {db.meta?.profiles?.map((u) => (
+                    {db.meta?.profiles?.filter((u) => u.id !== db.meta.active).map((u) => (
                       <button
                         key={u.id}
-                        onClick={async () => {
-                          if (u.id !== db.meta.active) await selectProfile(u.id);
-                          setProfMenu(false);
-                        }}
-                        className={`w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-semibold ${
-                          u.id === db.meta.active ? "bg-orange-50 text-orange-600" : "text-stone-700 hover:bg-orange-50/60"
-                        }`}
+                        onClick={() => { beginSwitch(u.id, true); setProfMenu(false); setRoute("auth"); }}
+                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-stone-700 hover:bg-orange-50/60"
                       >
                         <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-[11px] flex items-center justify-center">
                           {(u.name || "И")[0]?.toUpperCase()}
                         </span>
                         <span className="flex-1 truncate">{u.name}</span>
-                        {u.id === db.meta.active && <span>✓</span>}
                       </button>
                     ))}
                     <button
-                      onClick={() => {
-                        setProfMenu(false);
-                        setRoute("settings");
-                      }}
+                      onClick={() => { beginSwitch(null, true); setProfMenu(false); setRoute("auth"); }}
                       className="w-full px-4 py-3 text-left text-sm font-semibold text-stone-400 border-t border-orange-50 hover:bg-orange-50/60"
                     >
-                      ＋ Новый профиль…
+                      ＋ Новый профиль
                     </button>
                   </div>
                 </>
@@ -165,7 +147,7 @@ export default function App() {
         )}
       </main>
 
-      {route !== "settings" && (
+      {route !== "settings" && route !== "auth" && (
         <BottomNav active={route === "listen" ? "today" : route} onNav={setRoute} state={profile} />
       )}
     </div>
