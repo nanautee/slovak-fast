@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, getToken, setToken, AuthError } from "./lib/api.js";
+import { api } from "./lib/api.js";
 
 const INTERVALS = [1, 2, 4, 7, 15, 30, 60];
 
@@ -84,19 +84,6 @@ export const useProfile = () => {
   const d = useDb();
   return d[d.meta.active];
 };
-export const useMeta = () => {
-  const d = useDb();
-  return d.meta;
-};
-
-export function profileOf(id) {
-  return db[id] || valid(defaultProfile());
-}
-
-export const otherProfileId = () => {
-  const m = db.meta;
-  return m.profiles.find((p) => p.id !== m.active)?.id || null;
-};
 
 export function levelFor(dayNumber) {
   if (dayNumber >= 60) return "B1";
@@ -165,44 +152,13 @@ export async function init() {
   if (booting) return;
   booting = true;
   try {
-    if (!getToken()) {
-      db = { ...emptyDb(), boot: "noauth" };
-      notify();
-      return;
-    }
     hydrate(await api.state());
   } catch (e) {
-    if (e instanceof AuthError) {
-      setToken("");
-      db = { ...emptyDb(), boot: "noauth" };
-    } else {
-      db = { ...emptyDb(), boot: "offline" };
-    }
+    db = { ...emptyDb(), boot: "offline" };
     notify();
   } finally {
     booting = false;
   }
-}
-
-export async function login(name, pin) {
-  const res = await api.login(name, pin);
-  setToken(res.token);
-  hydrate(await api.state());
-  return res.user;
-}
-
-export async function register(name, pin) {
-  const res = await api.register(name, pin);
-  setToken(res.token);
-  hydrate(await api.state());
-  return res.user;
-}
-
-export async function logout() {
-  await api.logout();
-  setToken("");
-  db = { ...emptyDb(), boot: "noauth" };
-  notify();
 }
 
 export async function ensureTopic() {

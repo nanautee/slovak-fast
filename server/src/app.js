@@ -1,18 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import {
-  createUser,
-  findUser,
-  createSession,
-  deleteSession,
-  userIdByToken,
-  getUser,
-  getProfile,
-  getOtherProfile,
-  usersMeta,
-  setProfile,
-  listUsers,
-} from "./data.js";
+import { getProfile, setProfile, usersMeta, listUsers } from "./data.js";
 import { hasKey, generateTopicJson, generateQuizJson, chatReply } from "./ai.js";
 import { fallbackTopic, localQuiz, FALLBACK_REPLIES } from "./fallback.js";
 
@@ -24,76 +12,24 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, ai: hasKey(), users: listUsers().map((u) => u.name) })
 );
 
-function requireAuth(c) {
-  const auth = c.req.header("Authorization") || "";
-  const token = auth.replace(/^Bearer\s+/i, "");
-  const uid = userIdByToken(token);
-  if (!uid) return null;
-  return uid;
-}
-
-app.post("/api/auth/register", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const name = String(body.name || "").trim();
-  const pin = String(body.pin || "");
-  if (!name || name.length < 2) return c.json({ error: "Имя слишком короткое" }, 400);
-  if (!pin || pin.length < 4) return c.json({ error: "ПИН минимум 4 символа" }, 400);
-  try {
-    const user = createUser(name, pin);
-    const token = createSession(user.id);
-    return c.json({ token, user: { id: user.id, name: user.name } });
-  } catch (e) {
-    return c.json({ error: e.message }, e.status || 500);
-  }
-});
-
-app.post("/api/auth/login", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const user = findUser(String(body.name || ""), String(body.pin || ""));
-  if (!user) return c.json({ error: "Неверное имя или ПИН" }, 401);
-  const token = createSession(user.id);
-  return c.json({ token, user: { id: user.id, name: user.name } });
-});
-
-app.post("/api/auth/logout", (c) => {
-  const uid = requireAuth(c);
-  if (uid) {
-    const auth = c.req.header("Authorization") || "";
-    deleteSession(auth.replace(/^Bearer\s+/i, ""));
-  }
-  return c.json({ ok: true });
-});
-
-app.get("/api/state", (c) => {
-  const uid = requireAuth(c);
-  if (!uid) return c.json({ error: "Unauthorized" }, 401);
-  return c.json({
-    meta: usersMeta(uid),
-    profiles: profileBundle(uid),
-  });
-});
+app.get("/api/state", (c) =>
+  c.json({ meta: usersMeta(), profiles: profileBundle() })
+);
 
 app.put("/api/state", async (c) => {
-  const uid = requireAuth(c);
-  if (!uid) return c.json({ error: "Unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
   if (!body || typeof body !== "object") return c.json({ error: "Bad state" }, 400);
-  setProfile(uid, body);
-  return c.json({
-    meta: usersMeta(uid),
-    profiles: profileBundle(uid),
-  });
+  setProfile(body);
+  return c.json({ meta: usersMeta(), profiles: profileBundle() });
 });
 
-function profileBundle(uid) {
+function profileBundle() {
   const bundle = {};
-  for (const u of listUsers()) bundle[u.id] = getProfile(u.id);
+  for (const u of listUsers()) bundle[u.id] = getProfile();
   return bundle;
 }
 
 app.post("/api/topic", async (c) => {
-  const uid = requireAuth(c);
-  if (!uid) return c.json({ error: "Unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
   const dayNumber = Number(body.dayNumber) || 1;
   const seen = Array.isArray(body.seenTopics) ? body.seenTopics : [];
@@ -116,8 +52,6 @@ app.post("/api/topic", async (c) => {
 });
 
 app.post("/api/quiz", async (c) => {
-  const uid = requireAuth(c);
-  if (!uid) return c.json({ error: "Unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
   if (hasKey()) {
     try {
@@ -131,8 +65,6 @@ app.post("/api/quiz", async (c) => {
 });
 
 app.post("/api/chat", async (c) => {
-  const uid = requireAuth(c);
-  if (!uid) return c.json({ error: "Unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
   const topic = body.topic || {};
   const msgs = Array.isArray(body.msgs) ? body.msgs : [];

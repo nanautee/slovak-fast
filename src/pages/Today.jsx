@@ -1,13 +1,10 @@
 import { useState } from "react";
 import {
   useProfile,
-  useMeta,
   questList,
   todayDone,
   todayTotal,
   completeToday,
-  profileOf,
-  otherProfileId,
   todayStr,
   levelFor,
 } from "../store.js";
@@ -24,13 +21,9 @@ function catMood(done, total) {
 
 export default function Today({ setRoute }) {
   const profile = useProfile();
-  const meta = useMeta();
   const total = todayTotal();
   const done = todayDone(profile);
   const quests = questList(profile);
-  const friendId = otherProfileId();
-  const friend = friendId ? profileOf(friendId) : null;
-  const friendName = friendId ? meta.profiles.find((p) => p.id === friendId)?.name || friendId : "";
 
   const showCelebrate = done === total;
 
@@ -121,27 +114,6 @@ export default function Today({ setRoute }) {
           </button>
         ))}
       </section>
-
-      {friend && (
-        <section className="bg-white rounded-2xl p-4 border border-orange-100">
-          <h3 className="font-bold text-sm text-stone-600 mb-2">Друг · {friendName}</h3>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <ProgressBar
-                value={(todayDone(friend) / todayTotal()) * 100}
-                className="bg-stone-100"
-              />
-              <div className="text-xs text-stone-400 mt-1">
-                {todayDone(friend)}/4 заданий {friend.topic ? `· ${friend.topic.ru}` : ""}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-lg font-extrabold text-orange-500">🔥 {friend.streak}</div>
-              <div className="text-[10px] text-stone-400">стрик друга</div>
-            </div>
-          </div>
-        </section>
-      )}
 
       <p className="text-center text-xs text-stone-400 pt-1 pb-4">
         День {profile.dayNumber} · выучено слов: {profile.words.length}

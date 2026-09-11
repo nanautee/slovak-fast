@@ -4,7 +4,6 @@ import { warmVoices, hasSkVoice } from "./lib/tts.js";
 
 import Mascot from "./components/Mascot.jsx";
 import BottomNav from "./components/BottomNav.jsx";
-import Auth from "./pages/Auth.jsx";
 import Today from "./pages/Today.jsx";
 import Cards from "./pages/Cards.jsx";
 import Chat from "./pages/Chat.jsx";
@@ -29,7 +28,6 @@ export default function App() {
   }, []);
 
   if (!profile) {
-    if (db.boot === "noauth") return <Auth />;
     if (db.boot === "offline")
       return (
         <div className="min-h-full flex flex-col items-center justify-center gap-4 px-6">
@@ -84,9 +82,7 @@ export default function App() {
             <Mascot size={34} src="/logo.png" />
             <div className="leading-tight">
               <div className="font-extrabold text-lg text-orange-600">SlovakFast</div>
-              <div className="text-[10px] text-stone-400">
-                {db.meta.profiles.find((p) => p.id === db.meta.active)?.name || ""} · {levelFor(profile.dayNumber)}
-              </div>
+              <div className="text-[10px] text-stone-400">{levelFor(profile.dayNumber)}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">

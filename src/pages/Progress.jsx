@@ -1,12 +1,10 @@
-import { useProfile, useMeta, levelFor, todayStr, profileOf } from "../store.js";
+import { useProfile, levelFor, todayStr } from "../store.js";
 import Mascot from "../components/Mascot.jsx";
-import ProgressBar from "../components/ProgressBar.jsx";
 
 const BOX_LABEL = ["Новые", "1 день", "2 дн.", "4 дн.", "7 дн.", "15 дн.", "30 дн.", "60 дн."];
 
 export default function Progress({ setRoute }) {
   const profile = useProfile();
-  const meta = useMeta();
   const words = profile.words || [];
   const boxes = Array.from({ length: 8 }, (_, i) => words.filter((w) => w.box === i).length);
   const due = words.filter((w) => w.next && w.next <= todayStr()).length;
@@ -20,9 +18,7 @@ export default function Progress({ setRoute }) {
           <Mascot size={72} />
           <div className="flex-1">
             <div className="text-xs text-stone-400">Изучающий</div>
-            <div className="text-lg font-extrabold">
-              {meta.profiles.find((p) => p.id === meta.active)?.name || ""} · {levelFor(profile.dayNumber)}
-            </div>
+            <div className="text-lg font-extrabold">{levelFor(profile.dayNumber)}</div>
             <div className="text-xs text-stone-500 mt-1">
               День {profile.dayNumber} · стрик 🔥 {profile.streak}
             </div>
@@ -50,20 +46,6 @@ export default function Progress({ setRoute }) {
               </span>
             </div>
           ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-3xl p-5 border border-orange-100">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="font-bold text-sm text-stone-600">Друг · {otherName(meta)}</h3>
-          <span className="text-xs text-stone-400">🔥 {profileOf(otherId(meta)).streak}</span>
-        </div>
-        <ProgressBar
-          value={Math.min(profileOf(otherId(meta)).dayNumber, 100) * 2.5}
-          className="bg-stone-100"
-        />
-        <div className="text-xs text-stone-400 mt-1">
-          {otherName(meta)} на дне {profileOf(otherId(meta)).dayNumber} · {levelFor(profileOf(otherId(meta)).dayNumber)}
         </div>
       </div>
 
@@ -107,7 +89,7 @@ export default function Progress({ setRoute }) {
       </div>
 
       <p className="text-center text-xs text-stone-400 pb-2">
-        Данные хранятся локально в браузере
+        Прогресс хранится на сервере
       </p>
     </div>
   );
@@ -120,11 +102,4 @@ function Stat({ label, value, accent }) {
       <div className="text-[10px] text-stone-400">{label}</div>
     </div>
   );
-}
-
-function otherId(meta) {
-  return meta.profiles.find((p) => p.id !== meta.active)?.id || meta.active;
-}
-function otherName(meta) {
-  return meta.profiles.find((p) => p.id !== meta.active)?.name || "";
 }
