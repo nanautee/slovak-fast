@@ -186,6 +186,25 @@ export async function selectProfile(id) {
   notify();
 }
 
+export async function deleteProfile(id) {
+  await api.deleteProfile(id);
+  setUserId("");
+  try {
+    const payload = await api.state();
+    const rest = payload.meta.profiles || [];
+    if (rest.length) {
+      setUserId(rest[0].id);
+      hydrate(payload, rest[0].id);
+    } else {
+      db = { ...emptyDb(), boot: "pick" };
+      notify();
+    }
+  } catch (e) {
+    db = { ...emptyDb(), boot: "offline" };
+    notify();
+  }
+}
+
 export async function ensureTopic() {
   mutate((p) => rollover(p));
   const p = db[db.meta.active];

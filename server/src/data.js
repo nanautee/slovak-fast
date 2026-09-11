@@ -95,6 +95,13 @@ export function createProfile(id, name) {
   return { id, name: name.trim() };
 }
 
+export function deleteProfile(id) {
+  load();
+  if (!db.profiles[id]) throw Object.assign(new Error("Профиль не найден"), { status: 404 });
+  delete db.profiles[id];
+  persist();
+}
+
 export function usersMeta() {
   return { profiles: listUsers() };
 }

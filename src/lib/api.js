@@ -33,6 +33,7 @@ export function setUserId(id) {
 export const api = {
   state: () => request("/api/state"),
   createProfile: (id, name) => request("/api/profile", { method: "POST", body: JSON.stringify({ id, name }) }),
+  deleteProfile: (id) => request(`/api/profile/${encodeURIComponent(id)}`, { method: "DELETE" }),
   save: (id, profile) => request("/api/state", { method: "PUT", body: JSON.stringify({ id, ...profile }) }),
   topic: (dayNumber, seenTopics) => request("/api/topic", { method: "POST", body: JSON.stringify({ dayNumber, seenTopics }) }),
   quiz: (topic) => request("/api/quiz", { method: "POST", body: JSON.stringify({ topic }) }),

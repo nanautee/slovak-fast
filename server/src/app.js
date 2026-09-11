@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getProfile, setProfile, createProfile, usersMeta, listUsers } from "./data.js";
+import { getProfile, setProfile, createProfile, deleteProfile, usersMeta, listUsers } from "./data.js";
 import { hasKey, generateTopicJson, generateQuizJson, chatReply } from "./ai.js";
 import { fallbackTopic, localQuiz, FALLBACK_REPLIES } from "./fallback.js";
 
@@ -47,6 +47,16 @@ function profileBundle() {
   }
   return bundle;
 }
+
+app.delete("/api/profile/:id", (c) => {
+  const id = c.req.param("id");
+  try {
+    deleteProfile(id);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e.message }, e.status || 500);
+  }
+});
 
 app.post("/api/topic", async (c) => {
   const body = await c.req.json().catch(() => ({}));

@@ -118,3 +118,15 @@ test("PUT state without id is rejected", async () => {
   const { status } = await call("PUT", "/api/state", { dayNumber: 5 });
   assert.equal(status, 400);
 });
+
+test("deleteProfile", async () => {
+  let r = await call("DELETE", "/api/profile/b");
+  assert.equal(r.status, 200);
+
+  const state = await call("GET", "/api/state");
+  assert.ok(!state.json.profiles.b);
+  assert.equal(state.json.meta.profiles.length, 1);
+
+  r = await call("DELETE", "/api/profile/b");
+  assert.equal(r.status, 404);
+});

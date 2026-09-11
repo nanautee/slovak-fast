@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useDb, useProfile, resetProfile, addProfile, selectProfile } from "../store.js";
+import { useDb, useProfile, deleteProfile, resetProfile, addProfile, selectProfile } from "../store.js";
 import Mascot from "../components/Mascot.jsx";
 
 export default function Settings({ setRoute }) {
@@ -9,6 +9,7 @@ export default function Settings({ setRoute }) {
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const existing = db.meta?.profiles || [];
   const active = db.meta?.active;
 
@@ -31,6 +32,19 @@ export default function Settings({ setRoute }) {
     setErr(null);
     try {
       await selectProfile(id);
+    } catch (e) {
+      setErr(e.message);
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await deleteProfile(active);
+      setConfirmDelete(false);
     } catch (e) {
       setErr(e.message);
       setBusy(false);
@@ -97,8 +111,16 @@ export default function Settings({ setRoute }) {
       </section>
 
       <section className="bg-white rounded-3xl p-5 border border-orange-100">
-        <h3 className="font-bold text-sm text-stone-600 mb-3">Прогресс</h3>
+        <h3 className="font-bold text-sm text-stone-600 mb-3">Профиль</h3>
         <div className="space-y-2.5">
+          {existing.length > 1 && (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="w-full bg-red-50 text-red-500 font-bold py-3 rounded-2xl border border-red-200 active:scale-[0.98] transition-transform"
+            >
+              Удалить профиль «{profile.name || "Игрок"}»
+            </button>
+          )}
           <button
             onClick={() => setConfirmReset(true)}
             className="w-full bg-red-50 text-red-500 font-bold py-3 rounded-2xl border border-red-200 active:scale-[0.98] transition-transform"
@@ -106,6 +128,29 @@ export default function Settings({ setRoute }) {
             Сбросить прогресс ({profile.name || "Игрок"})
           </button>
         </div>
+
+        {confirmDelete && (
+          <div className="mt-3 p-4 bg-red-50 border border-red-200 rounded-2xl">
+            <div className="text-sm font-semibold text-red-600 mb-3">
+              Удалить профиль «{profile.name || "Игрок"}» навсегда?
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={remove}
+                disabled={busy}
+                className="flex-1 bg-red-500 text-white font-bold py-2.5 rounded-xl disabled:opacity-50"
+              >
+                Удалить
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="flex-1 bg-stone-100 text-stone-600 font-bold py-2.5 rounded-xl"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
 
         {confirmReset && (
           <div className="mt-3 p-4 bg-red-50 border border-red-200 rounded-2xl">

@@ -35,6 +35,13 @@ globalThis.fetch = async (url, opts = {}) => {
   const json = (data, status = 200) =>
     Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }));
 
+  const del = path.match(/^\/api\/profile\/(.+)$/);
+  if (del && method === "DELETE") {
+    if (!serverSim.profiles[del[1]]) return json({ error: "Профиль не найден" }, 404);
+    delete serverSim.profiles[del[1]];
+    return json({ ok: true });
+  }
+
   switch (path) {
     case "/api/health":
       return json({ ok: true });
@@ -147,6 +154,15 @@ removeStored();
 await s.init();
 db = s.getDb();
 ok(db.boot === "pick", "без сохранённого id → экран выбора профиля");
+
+setUserId("anya");
+await s.init();
+ok(s.getDb().meta.active === "anya", "возврат к Ане через сохранённый id");
+await s.selectProfile("max");
+await s.deleteProfile("max");
+db = s.getDb();
+ok(!serverSim.profiles.max, "профиль Макса удалён на сервере");
+ok(db.meta.active === "anya" && !!db.anya && db.max === undefined, "после удаления активен оставшийся профиль");
 
 function removeStored() {
   try {
