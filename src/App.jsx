@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { init, ensureTopic, todayDone, todayTotal, useDb, useProfile, levelFor, beginSwitch } from "./store.js";
+import { init, ensureTopic, todayDone, todayTotal, useDb, useProfile, levelFor } from "./store.js";
 import { warmVoices, hasSkVoice } from "./lib/tts.js";
 
 import Mascot from "./components/Mascot.jsx";
@@ -12,14 +12,13 @@ import Listen from "./pages/Listen.jsx";
 import Progress from "./pages/Progress.jsx";
 import Dict from "./pages/Dict.jsx";
 import Settings from "./pages/Settings.jsx";
-import AuthScreen from "./pages/AuthScreen.jsx";
+import WelcomeScreen from "./pages/WelcomeScreen.jsx";
 
 export default function App() {
   const db = useDb();
   const profile = useProfile();
   const [route, setRoute] = useState("today");
   const [ready, setReady] = useState(false);
-  const [profMenu, setProfMenu] = useState(false);
 
   useEffect(() => {
     warmVoices();
@@ -28,11 +27,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
-  useEffect(() => {
-    if (db.boot === "ok" && route === "auth") setRoute("today");
-  }, [db.boot, route]);
-
-  if (db.boot === "auth") return <AuthScreen setRoute={setRoute} />;
+  if (db.boot === "welcome") return <WelcomeScreen />;
 
   if (!profile) {
     if (db.boot === "offline")
@@ -66,7 +61,6 @@ export default function App() {
       case "progress": return <Progress {...props} />;
       case "dict": return <Dict {...props} />;
       case "settings": return <Settings {...props} />;
-      case "auth": return <AuthScreen setRoute={setRoute} />;
       default: return <Today {...props} />;
     }
   })();
@@ -83,43 +77,12 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <button
-                onClick={() => setProfMenu((v) => !v)}
-                className="flex items-center gap-1 bg-white border border-orange-200 rounded-full pl-2.5 pr-2 py-1 text-sm font-bold text-stone-700"
-              >
-                <span className="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center">
-                  {(profile.name || "И")[0]?.toUpperCase()}
-                </span>
-                <span className="max-w-[64px] truncate">{profile.name || "Игрок"}</span>
-                <span className="text-stone-300 text-[9px]">▼</span>
-              </button>
-              {profMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setProfMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl border border-orange-100 shadow-xl z-50 overflow-hidden">
-                    {db.meta?.profiles?.filter((u) => u.id !== db.meta.active).map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => { beginSwitch(u.id, true); setProfMenu(false); setRoute("auth"); }}
-                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-stone-700 hover:bg-orange-50/60"
-                      >
-                        <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-[11px] flex items-center justify-center">
-                          {(u.name || "И")[0]?.toUpperCase()}
-                        </span>
-                        <span className="flex-1 truncate">{u.name}</span>
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => { beginSwitch(null, true); setProfMenu(false); setRoute("auth"); }}
-                      className="w-full px-4 py-3 text-left text-sm font-semibold text-stone-400 border-t border-orange-50 hover:bg-orange-50/60"
-                    >
-                      ＋ Новый профиль
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            <span className="flex items-center gap-1 bg-white border border-orange-200 rounded-full px-2.5 py-1 text-sm font-bold text-stone-700">
+              <span className="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center">
+                {(profile.name || "И")[0]?.toUpperCase()}
+              </span>
+              <span className="max-w-[64px] truncate">{profile.name || "Игрок"}</span>
+            </span>
             <span className="flex items-center gap-1 bg-orange-100 rounded-full px-2.5 py-1 text-sm font-bold text-orange-600">
               🔥 {profile.streak}
             </span>
@@ -147,7 +110,7 @@ export default function App() {
         )}
       </main>
 
-      {route !== "settings" && route !== "auth" && (
+      {route !== "settings" && (
         <BottomNav active={route === "listen" ? "today" : route} onNav={setRoute} state={profile} />
       )}
     </div>

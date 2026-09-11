@@ -3,7 +3,6 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { rmSync, existsSync } from "node:fs";
 import { app } from "../src/app.js";
-import { setProfile, listUsers } from "../src/data.js";
 
 before(() => {
   if (existsSync(".test-data")) rmSync(".test-data", { recursive: true, force: true });
@@ -21,132 +20,101 @@ async function call(method, path, body, headers = {}) {
   try { json = JSON.parse(text); } catch (e) {}
   return { status: res.status, json };
 }
-const authed = (id, token) => ({ "x-user-id": id, "x-auth-token": token });
+const tok = (t) => ({ "x-auth-token": t });
 
-test("health", async () => {
+test("health: 0 устройств", async () => {
   const { status, json } = await call("GET", "/api/health");
   assert.equal(status, 200);
   assert.equal(json.ok, true);
+  assert.equal(json.devices, 0);
 });
 
-test("users empty at start", async () => {
-  const { status, json } = await call("GET", "/api/users");
+test("bootstrap создаёт устройство с токеном", async () => {
+  const { status, json } = await call("POST", "/api/bootstrap", { name: "Аня" });
   assert.equal(status, 200);
-  assert.deepEqual(json.profiles, []);
+  assert.ok(json.token.length >= 30, "случайный токен");
+  assert.equal(json.existing, false);
+  assert.equal(json.profile.name, "Аня");
+  bootstrapA = json;
 });
+let bootstrapA = null;
 
-test("register: валидация и создание", async () => {
-  let r = await call("POST", "/api/auth/register", { name: "А", password: "1234" });
-  assert.equal(r.status, 400);
-
-  r = await call("POST", "/api/auth/register", { name: "Аня", password: "12" });
-  assert.equal(r.status, 400);
-
-  r = await call("POST", "/api/auth/register", { name: "Аня", password: "secret1" });
-  assert.equal(r.status, 200);
-  assert.ok(r.json.id && r.json.token);
-  registerA = r.json;
-
-  r = await call("POST", "/api/auth/register", { name: "аня", password: "secret2" });
-  assert.equal(r.status, 409);
-});
-let registerA = null;
-
-test("login: неверный пароль отклонён", async () => {
-  let r = await call("POST", "/api/auth/login", { id: registerA.id, password: "wrong" });
-  assert.equal(r.status, 403);
-
-  r = await call("POST", "/api/auth/login", { id: "nonexistent", password: "x" });
-  assert.equal(r.status, 404);
-
-  r = await call("POST", "/api/auth/login", { id: registerA.id, password: "secret1" });
-  assert.equal(r.status, 200);
-  assert.ok(r.json.token);
-  assert.equal(r.json.id, registerA.id);
-});
-
-test("state требует авторизации", async () => {
-  const unauth = await call("GET", "/api/state");
-  assert.equal(unauth.status, 401);
-
-  const put = await call("PUT", "/api/state", { id: registerA.id, dayNumber: 5 });
+test("state без токена — 401", async () => {
+  const r = await call("GET", "/api/state");
+  assert.equal(r.status, 401);
+  const put = await call("PUT", "/api/state", { dayNumber: 5 });
   assert.equal(put.status, 401);
-
-  const wrongToken = await call("GET", "/api/state", undefined, authed(registerA.id, "bad-token"));
-  assert.equal(wrongToken.status, 401);
+  const wrong = await call("GET", "/api/state", undefined, tok("bad-token"));
+  assert.equal(wrong.status, 401);
 });
 
-test("state отдаёт только свой профиль", async () => {
-  await call("POST", "/api/auth/register", { name: "Макс", password: "secret2" });
+test("state по токену — только свой профиль", async () => {
+  const other = await call("POST", "/api/bootstrap", { name: "Макс" });
+  assert.equal(other.status, 200);
 
-  const { status, json } = await call("GET", "/api/state", undefined, authed(registerA.id, registerA.token));
+  const { status, json } = await call("GET", "/api/state", undefined, tok(bootstrapA.token));
   assert.equal(status, 200);
-  assert.deepEqual(Object.keys(json.profiles), [registerA.id], "виден только Анин профиль");
-  assert.equal(json.meta.profiles.length, 2, "в списке имён оба пользователя");
-  assert.equal(json.profiles[registerA.id].dayNumber, 1);
+  assert.deepEqual(Object.keys(json.profiles), [bootstrapA.token], "виден только Анин профиль");
+  assert.equal(json.profiles[bootstrapA.token].name, "Аня");
+  assert.equal(json.meta.profiles.length, 2, "в списке имён оба устройства");
 });
 
-test("PUT state по токену владельца", async () => {
-  const state = await call("GET", "/api/state", undefined, authed(registerA.id, registerA.token));
-  const prof = state.json.profiles[registerA.id];
+test("bootstrap с тем же токеном возвращает тот же профиль", async () => {
+  const { status, json } = await call("POST", "/api/bootstrap", { name: "Что-то другое" }, tok(bootstrapA.token));
+  assert.equal(status, 200);
+  assert.equal(json.existing, true);
+  assert.equal(json.token, bootstrapA.token);
+  assert.equal(json.profile.name, "Аня", "имя не перезаписалось");
+});
+
+test("PUT state по токену сохраняет прогресс", async () => {
+  const state = await call("GET", "/api/state", undefined, tok(bootstrapA.token));
+  const prof = state.json.profiles[bootstrapA.token];
   prof.today.cards.done = true;
   prof.today.cards.correct = 10;
   prof.words = [{ sk: "mačka", ru: "кошка", box: 1, next: "2026-09-11", correct: 1 }];
 
-  const saved = await call("PUT", "/api/state", { id: registerA.id, ...prof }, authed(registerA.id, registerA.token));
+  const saved = await call("PUT", "/api/state", { ...prof }, tok(bootstrapA.token));
   assert.equal(saved.status, 200);
-  assert.equal(saved.json.profiles[registerA.id].today.cards.done, true);
-  assert.equal(saved.json.profiles[registerA.id].words.length, 1);
+  assert.equal(saved.json.profiles[bootstrapA.token].today.cards.done, true);
+  assert.equal(saved.json.profiles[bootstrapA.token].words.length, 1);
 
-  const g = await call("GET", "/api/state", undefined, authed(registerA.id, registerA.token));
-  assert.equal(g.json.profiles[registerA.id].today.cards.done, true);
+  const g = await call("GET", "/api/state", undefined, tok(bootstrapA.token));
+  assert.equal(g.json.profiles[bootstrapA.token].today.cards.done, true);
 });
 
-test("PUT state чужим токеном запрещён", async () => {
-  const users = listUsers();
-  const maxId = users.find((u) => u.name === "Макс").id;
-  const maxLogin = await call("POST", "/api/auth/login", { id: maxId, password: "secret2" });
-  const r = await call("PUT", "/api/state", { id: registerA.id, dayNumber: 99 }, authed(maxId, maxLogin.json.token));
-  assert.equal(r.status, 403, "Макс не может писать в профиль Ани");
+test("PUT чужим токеном запрещён", async () => {
+  const r = await call("PUT", "/api/state", { dayNumber: 99 }, tok(bootstrapA.token + "x"));
+  assert.equal(r.status, 401, "изменённый токен не подходит");
 });
 
-test("profile с legacy без пароля: первый вход ставит пароль", async () => {
-  setProfile("legacy-id", { name: "Старый", today: { cards: { done: true } } });
+test("rename: имя меняется по токену", async () => {
+  let r = await call("POST", "/api/rename", { name: "Аня" });
+  assert.equal(r.status, 401, "без токена нельзя переименовать");
 
-  const r = await call("POST", "/api/auth/login", { id: "legacy-id", password: "mypassword" });
+  r = await call("POST", "/api/rename", { name: "Анечка" }, tok(bootstrapA.token));
   assert.equal(r.status, 200);
-  assert.equal(r.json.needsPassword, true);
-  assert.ok(r.json.token);
+  assert.equal(r.json.profile.name, "Анечка");
 
-  const wrongNow = await call("POST", "/api/auth/login", { id: "legacy-id", password: "otherpass" });
-  assert.equal(wrongNow.status, 403, "после установки пароль обязателен");
+  r = await call("GET", "/api/state", undefined, tok(bootstrapA.token));
+  assert.equal(r.json.profiles[bootstrapA.token].name, "Анечка");
 
-  const set = await call("POST", "/api/auth/set-password", { password: "newpass" }, authed("legacy-id", r.json.token));
-  assert.equal(set.status, 200);
-
-  const relogin = await call("POST", "/api/auth/login", { id: "legacy-id", password: "newpass" });
-  assert.equal(relogin.status, 200);
+  r = await call("POST", "/api/rename", { name: "" }, tok(bootstrapA.token));
+  assert.equal(r.status, 400);
 });
 
-test("delete требует токен владельца", async () => {
-  let r = await call("DELETE", "/api/profile/legacy-id");
+test("delete: только по своему токену", async () => {
+  let r = await call("DELETE", "/api/profile", undefined, tok(bootstrapA.token + "nope"));
   assert.equal(r.status, 401);
 
-  const users = listUsers();
-  const maxId = users.find((u) => u.name === "Макс").id;
-  const maxLogin = await call("POST", "/api/auth/login", { id: maxId, password: "secret2" });
-  r = await call("DELETE", "/api/profile/legacy-id", undefined, authed(maxId, maxLogin.json.token));
-  assert.equal(r.status, 401, "чужой владелец не может удалить");
-
-  r = await call("DELETE", "/api/profile/legacy-id", undefined, authed("legacy-id", maxLogin.json.token));
-  assert.equal(r.status, 401, "неверный токен");
-
-  const legLogin = await call("POST", "/api/auth/login", { id: "legacy-id", password: "newpass" });
-  r = await call("DELETE", "/api/profile/legacy-id", undefined, authed("legacy-id", legLogin.json.token));
+  r = await call("DELETE", "/api/profile", undefined, tok(bootstrapA.token));
   assert.equal(r.status, 200);
 
-  r = await call("DELETE", "/api/profile/legacy-id", undefined, authed("legacy-id", legLogin.json.token));
-  assert.equal(r.status, 404);
+  r = await call("GET", "/api/state", undefined, tok(bootstrapA.token));
+  assert.equal(r.status, 401, "после удаления токен недействителен");
+
+  const health = await call("GET", "/api/health");
+  assert.equal(health.json.devices, 1, "осталось одно устройство (Макс)");
 });
 
 test("topic/quiz/chat работают без авторизации", async () => {

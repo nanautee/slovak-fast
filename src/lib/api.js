@@ -16,15 +16,8 @@ async function request(path, options = {}) {
   return r.json();
 }
 
-export const USER_KEY = "sf_user";
 export const TOKEN_KEY = "sf_token";
 
-export function getUserId() {
-  try { return localStorage.getItem(USER_KEY) || ""; } catch { return ""; }
-}
-export function setUserId(id) {
-  try { if (id) localStorage.setItem(USER_KEY, id); else localStorage.removeItem(USER_KEY); } catch {}
-}
 export function getToken() {
   try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
 }
@@ -35,23 +28,17 @@ export function clearToken() {
   try { localStorage.removeItem(TOKEN_KEY); } catch {}
 }
 
-export function uid() {
-  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
-}
-
 function authHeaders() {
-  return { "x-user-id": getUserId(), "x-auth-token": getToken() };
+  return { "x-auth-token": getToken() };
 }
 
 export const api = {
-  users: () => request("/api/users"),
-  register: (name, password) => request("/api/auth/register", { method: "POST", body: JSON.stringify({ name, password }) }),
-  login: (id, password) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ id, password }) }),
-  setPassword: (password) => request("/api/auth/set-password", { method: "POST", body: JSON.stringify({ password }), headers: authHeaders() }),
+  bootstrap: (name) => request("/api/bootstrap", { method: "POST", body: JSON.stringify({ name }) }),
+  rename: (name) => request("/api/rename", { method: "POST", body: JSON.stringify({ name }), headers: authHeaders() }),
 
   state: () => request("/api/state", { headers: authHeaders() }),
-  save: (id, profile) => request("/api/state", { method: "PUT", body: JSON.stringify({ id, ...profile }), headers: authHeaders() }),
-  deleteProfile: (id) => request(`/api/profile/${encodeURIComponent(id)}`, { method: "DELETE", headers: authHeaders() }),
+  save: (profile) => request("/api/state", { method: "PUT", body: JSON.stringify(profile), headers: authHeaders() }),
+  deleteProfile: () => request("/api/profile", { method: "DELETE", headers: authHeaders() }),
 
   topic: (dayNumber, seenTopics) => request("/api/topic", { method: "POST", body: JSON.stringify({ dayNumber, seenTopics }) }),
   quiz: (topic) => request("/api/quiz", { method: "POST", body: JSON.stringify({ topic }) }),

@@ -1,10 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import {
-  getProfile, setProfile, createProfile, deleteProfile,
-  usersMeta, listUsers,
-  issueToken, verifyToken, hasPassword, verifyPassword, setPassword,
-} from "./data.js";
+import { createDevice, getDevice, setProfile, deleteDevice, renameDevice, usersMeta, listUsers } from "./data.js";
 import { hasKey, generateTopicJson, generateQuizJson, chatReply } from "./ai.js";
 import { fallbackTopic, localQuiz, FALLBACK_REPLIES } from "./fallback.js";
 
@@ -43,106 +39,67 @@ function rateLimit(name, max, windowMs) {
 }
 
 app.use("/api/*", rateLimit("g", 300, 60000));
-app.post("/api/auth/register", rateLimit("a", 10, 600000));
-app.post("/api/auth/login", rateLimit("l", 30, 600000));
-app.delete("/api/profile/*", rateLimit("d", 5, 600000));
+app.post("/api/bootstrap", rateLimit("b", 10, 600000));
+app.delete("/api/profile", rateLimit("d", 5, 600000));
 
 /* ---------- helpers ---------- */
 
-function authHeaders(c) {
-  const id = c.req.header("x-user-id") || "";
-  const token = c.req.header("x-auth-token") || "";
-  return { id, token };
-}
-
-function requireAuth(c) {
-  const { id, token } = authHeaders(c);
-  if (!id || !verifyToken(id, token)) return null;
-  return { id, token };
+function tokenOf(c) {
+  return c.req.header("x-auth-token") || "";
 }
 
 /* ---------- health ---------- */
 
 app.get("/api/health", (c) =>
-  c.json({ ok: true, ai: hasKey(), users: listUsers().map((u) => u.name) })
+  c.json({ ok: true, ai: hasKey(), devices: listUsers().length })
 );
 
-/* ---------- public: user list (for picker) ---------- */
+/* ---------- bootstrap: одно устройство = один токен ---------- */
 
-app.get("/api/users", (c) => c.json({ profiles: usersMeta().profiles }));
-
-/* ---------- auth ---------- */
-
-app.post("/api/auth/register", async (c) => {
+app.post("/api/bootstrap", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const name = String(body.name || "").trim();
-  const password = String(body.password || "");
-  if (name.length < 2) return c.json({ error: "Имя слишком короткое" }, 400);
-  if (password.length < 4) return c.json({ error: "Пароль ≥ 4 символов" }, 400);
+  const existing = tokenOf(c);
+  if (existing && getDevice(existing)) {
+    return c.json({ ok: true, token: existing, profile: getDevice(existing), existing: true });
+  }
+  const device = createDevice(name);
+  return c.json({ ok: true, token: device.token, profile: device.profile, existing: false });
+});
+
+app.post("/api/rename", async (c) => {
+  const token = tokenOf(c);
+  if (!getDevice(token)) return c.json({ error: "Авторизуйся" }, 401);
+  const body = await c.req.json().catch(() => ({}));
   try {
-    const profile = createProfile(name, password);
-    const token = issueToken(profile.id);
-    return c.json({ ok: true, id: profile.id, name: profile.name, token });
+    return c.json({ ok: true, profile: renameDevice(token, String(body.name || "")) });
   } catch (e) {
     return c.json({ error: e.message }, e.status || 500);
   }
 });
 
-app.post("/api/auth/login", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const id = String(body.id || "");
-  const password = String(body.password || "");
-  if (!id) return c.json({ error: "Нет id" }, 400);
-  const profile = getProfile(id);
-  if (!profile) return c.json({ error: "Профиль не найден" }, 404);
-  if (password.length < 1) return c.json({ error: "Введите пароль" }, 400);
-  const had = hasPassword(id);
-  if (had && !verifyPassword(id, password)) {
-    return c.json({ error: "Неверный пароль" }, 403);
-  }
-  if (!had) setPassword(id, password);
-  const token = issueToken(id);
-  return c.json({ ok: true, id, name: profile.name, token, needsPassword: !had });
-});
-
-app.post("/api/auth/set-password", async (c) => {
-  const { id, token } = authHeaders(c);
-  if (!id || !verifyToken(id, token)) return c.json({ error: "Авторизуйся" }, 401);
-  const body = await c.req.json().catch(() => ({}));
-  const password = String(body.password || "");
-  if (password.length < 4) return c.json({ error: "Пароль ≥ 4 символов" }, 400);
-  setPassword(id, password);
-  return c.json({ ok: true });
-});
-
 /* ---------- protected: state ---------- */
 
 app.get("/api/state", (c) => {
-  const auth = requireAuth(c);
-  if (!auth) return c.json({ error: "Авторизуйся" }, 401);
-  const p = getProfile(auth.id);
-  if (!p) return c.json({ error: "Профиль не найден" }, 404);
-  return c.json({ meta: usersMeta(), profiles: { [auth.id]: p } });
+  const token = tokenOf(c);
+  const profile = getDevice(token);
+  if (!profile) return c.json({ error: "Авторизуйся" }, 401);
+  return c.json({ meta: usersMeta(), profiles: { [token]: profile } });
 });
 
 app.put("/api/state", async (c) => {
-  const auth = requireAuth(c);
-  if (!auth) return c.json({ error: "Авторизуйся" }, 401);
+  const token = tokenOf(c);
+  if (!getDevice(token)) return c.json({ error: "Авторизуйся" }, 401);
   const body = await c.req.json().catch(() => ({}));
-  const id = String(body.id || "");
-  if (!id || id !== auth.id) return c.json({ error: "Несовпадение профиля" }, 403);
-  setProfile(id, body);
-  const p = getProfile(id);
-  return c.json({ meta: usersMeta(), profiles: { [id]: p } });
+  if (!body || typeof body !== "object") return c.json({ error: "Bad state" }, 400);
+  const profile = setProfile(token, body);
+  return c.json({ meta: usersMeta(), profiles: { [token]: profile } });
 });
 
-/* ---------- protected: delete ---------- */
-
-app.delete("/api/profile/:id", async (c) => {
-  const id = c.req.param("id");
-  const { token } = authHeaders(c);
+app.delete("/api/profile", (c) => {
+  const token = tokenOf(c);
   try {
-    deleteProfile(id, token);
+    deleteDevice(token);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e.message }, e.status || 500);

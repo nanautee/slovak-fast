@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, getUserId, setUserId, getToken, setToken, clearToken } from "./lib/api.js";
+import { api, getToken, setToken, clearToken } from "./lib/api.js";
 
 const INTERVALS = [1, 2, 4, 7, 15, 30, 60];
 
@@ -38,7 +38,7 @@ const defaultProfile = () => ({
 
 const emptyDb = () => ({
   boot: "idle",
-  meta: { profiles: [], active: null, pendingId: null, fromApp: false },
+  meta: { active: null },
 });
 
 let db = emptyDb();
@@ -53,8 +53,8 @@ function mutate(fn) {
   notify();
 }
 function hydrate(payload, active) {
-  const meta = payload.meta || { profiles: [], active: null };
-  db = { boot: "ok", meta: { ...db.meta, ...meta, active: active || meta.active || null } };
+  const meta = payload.meta || { active: null };
+  db = { boot: "ok", meta: { ...meta, active: active || meta.active || null } };
   for (const [id, profile] of Object.entries(payload.profiles || {})) db[id] = valid(profile);
 }
 
@@ -122,17 +122,15 @@ async function syncState() {
   const active = db.meta.active;
   if (!active) return;
   try {
-    hydrate(await api.save(active, db[active]), active);
+    hydrate(await api.save(db[active]), active);
   } catch (e) {
-    if (e.status === 401 || e.status === 403) {
-      forceAuth();
-    }
+    if (e.status === 401 || e.status === 403) forceWelcome();
   }
 }
 
-function forceAuth() {
-  clearToken(); setUserId("");
-  db = { ...emptyDb(), meta: { ...emptyDb().meta, profiles: db.meta.profiles || [] }, boot: "auth" };
+function forceWelcome() {
+  clearToken();
+  db = { ...emptyDb(), boot: "welcome" };
   notify();
 }
 
@@ -143,64 +141,43 @@ export async function init() {
   if (booting) return;
   booting = true;
   try {
-    const stored = getUserId();
     const tok = getToken();
-    if (stored && tok) {
+    if (tok) {
       try {
         const payload = await api.state();
-        hydrate(payload, stored);
+        hydrate(payload, tok);
         notify();
         return;
       } catch (e) {
-        if (e.status === 401 || e.status === 403) { clearToken(); setUserId(""); }
+        if (e.status === 401 || e.status === 403) clearToken();
         else { db = { ...emptyDb(), boot: "offline" }; notify(); return; }
       }
     }
-    try {
-      const users = await api.users();
-      db = { ...emptyDb(), meta: { profiles: users.profiles || [], active: null, pendingId: null, fromApp: false }, boot: "auth" };
-    } catch (e) {
-      db = { ...emptyDb(), boot: "offline" };
-    }
+    db = { ...emptyDb(), boot: "welcome" };
   } finally { booting = false; notify(); }
 }
 
-/* ---------- auth ---------- */
+/* ---------- bootstrap: одно устройство = один токен ---------- */
 
-export async function register(name, password) {
-  const res = await api.register(name, password);
-  setToken(res.token); setUserId(res.id);
-  hydrate(await api.state(), res.id);
+export async function start(name) {
+  const res = await api.bootstrap(name);
+  setToken(res.token);
+  hydrate({ meta: {}, profiles: { [res.token]: res.profile } }, res.token);
   notify();
   return res;
 }
 
-export async function login(id, password) {
-  const res = await api.login(id, password);
-  setToken(res.token); setUserId(id);
-  hydrate(await api.state(), id);
-  notify();
-  return res;
+export async function rename(name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return;
+  try { await api.rename(trimmed); } catch (e) {}
+  mutate((p) => ({ ...p, name: trimmed }));
 }
 
-export async function setPassword(password) {
-  return api.setPassword(password);
-}
-
-export function beginSwitch(id, fromApp = false) {
-  db = { ...db, meta: { ...db.meta, pendingId: id || null, fromApp: !!fromApp } };
-  notify();
-}
-
-export async function deleteProfile(id) {
-  try { await api.deleteProfile(id); } catch (e) {
-    if (e.status === 401 || e.status === 403) { forceAuth(); return; }
-  }
-  clearToken(); setUserId("");
-  try {
-    const users = await api.users();
-    db = { ...emptyDb(), meta: { ...emptyDb().meta, profiles: users.profiles || [] }, boot: "auth" };
-  } catch (e) { db = { ...emptyDb(), boot: "offline" }; }
+export async function deleteProfile() {
+  try { await api.deleteProfile(); } catch (e) {}
+  clearToken();
+  db = { ...emptyDb(), boot: "welcome" };
   notify();
 }
 
