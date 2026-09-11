@@ -3,7 +3,6 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { rmSync, existsSync } from "node:fs";
 import { app } from "../src/app.js";
-import { SELF_ID } from "../src/data.js";
 
 before(() => {
   if (existsSync(".test-data")) rmSync(".test-data", { recursive: true, force: true });
@@ -31,14 +30,38 @@ test("health", async () => {
   assert.equal(json.ok, true);
 });
 
-test("state auto-creates single profile", async () => {
+test("state empty at start", async () => {
   const { status, json } = await call("GET", "/api/state");
   assert.equal(status, 200);
-  assert.equal(json.meta.active, SELF_ID);
-  assert.equal(json.meta.profiles.length, 1);
-  assert.ok(json.profiles[SELF_ID]);
-  assert.equal(json.profiles[SELF_ID].dayNumber, 1);
-  assert.ok(Array.isArray(json.profiles[SELF_ID].seenTopics));
+  assert.deepEqual(json.meta.profiles, []);
+  assert.deepEqual(json.profiles, {});
+});
+
+test("createProfile", async () => {
+  let r = await call("POST", "/api/profile", { id: "a", name: "Аня" });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.profile.name, "Аня");
+
+  r = await call("POST", "/api/profile", { id: "b", name: "А" });
+  assert.equal(r.status, 400);
+
+  r = await call("POST", "/api/profile", { id: "c", name: "аня" });
+  assert.equal(r.status, 409);
+  assert.match(r.json.error, /Имя уже занято/);
+
+  r = await call("POST", "/api/profile", { id: "a", name: "Макс" });
+  assert.equal(r.status, 409);
+});
+
+test("state lists profiles", async () => {
+  const { status, json } = await call("GET", "/api/state");
+  assert.equal(status, 200);
+  assert.deepEqual(
+    json.meta.profiles.map((u) => u.name),
+    ["Аня"]
+  );
+  assert.ok(json.profiles.a);
+  assert.equal(json.profiles.a.dayNumber, 1);
 });
 
 test("topic fallback generation", async () => {
@@ -70,19 +93,28 @@ test("chat fallback", async () => {
   assert.ok(json.reply);
 });
 
-test("state save/load roundtrip", async () => {
-  const state = await call("GET", "/api/state");
-  const profile = state.json.profiles[SELF_ID];
-  profile.today.cards.done = true;
-  profile.today.cards.correct = 10;
-  profile.words = [{ sk: "mačka", ru: "кошка", box: 1, next: "2026-09-11", correct: 1 }];
+test("state save per profile", async () => {
+  const r = await call("POST", "/api/profile", { id: "b", name: "Макс" });
+  assert.equal(r.status, 200);
 
-  const saved = await call("PUT", "/api/state", profile);
+  let state = await call("GET", "/api/state");
+  const aProfile = state.json.profiles.a;
+  aProfile.today.cards.done = true;
+  aProfile.today.cards.correct = 10;
+  aProfile.words = [{ sk: "mačka", ru: "кошка", box: 1, next: "2026-09-11", correct: 1 }];
+
+  const saved = await call("PUT", "/api/state", { id: "a", ...aProfile });
   assert.equal(saved.status, 200);
-  assert.equal(saved.json.profiles[SELF_ID].today.cards.done, true);
-  assert.equal(saved.json.profiles[SELF_ID].words.length, 1);
+  assert.equal(saved.json.profiles.a.today.cards.done, true);
+  assert.equal(saved.json.profiles.a.words.length, 1);
 
-  const reloaded = await call("GET", "/api/state");
-  assert.equal(reloaded.json.profiles[SELF_ID].today.cards.done, true);
-  assert.equal(reloaded.json.profiles[SELF_ID].words[0].sk, "mačka");
+  state = await call("GET", "/api/state");
+  assert.equal(state.json.profiles.a.today.cards.done, true);
+  assert.equal(state.json.profiles.a.words[0].sk, "mačka");
+  assert.equal(state.json.profiles.b.dayNumber, 1, "профиль Макса не затронут");
+});
+
+test("PUT state without id is rejected", async () => {
+  const { status } = await call("PUT", "/api/state", { dayNumber: 5 });
+  assert.equal(status, 400);
 });

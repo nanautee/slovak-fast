@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getProfile, setProfile, usersMeta, listUsers } from "./data.js";
+import { getProfile, setProfile, createProfile, usersMeta, listUsers } from "./data.js";
 import { hasKey, generateTopicJson, generateQuizJson, chatReply } from "./ai.js";
 import { fallbackTopic, localQuiz, FALLBACK_REPLIES } from "./fallback.js";
 
@@ -19,13 +19,32 @@ app.get("/api/state", (c) =>
 app.put("/api/state", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!body || typeof body !== "object") return c.json({ error: "Bad state" }, 400);
-  setProfile(body);
+  const id = String(body.id || "");
+  if (!id) return c.json({ error: "Нет id профиля" }, 400);
+  setProfile(id, body);
   return c.json({ meta: usersMeta(), profiles: profileBundle() });
+});
+
+app.post("/api/profile", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const id = String(body.id || "");
+  const name = String(body.name || "").trim();
+  if (!id) return c.json({ error: "Нет id профиля" }, 400);
+  if (!name || name.length < 2) return c.json({ error: "Имя слишком короткое" }, 400);
+  try {
+    createProfile(id, name);
+    return c.json({ ok: true, profile: { id, name } });
+  } catch (e) {
+    return c.json({ error: e.message }, e.status || 500);
+  }
 });
 
 function profileBundle() {
   const bundle = {};
-  for (const u of listUsers()) bundle[u.id] = getProfile();
+  for (const u of listUsers()) {
+    const p = getProfile(u.id);
+    if (p) bundle[u.id] = p;
+  }
   return bundle;
 }
 

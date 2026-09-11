@@ -1,8 +1,12 @@
-const serverSim = {
-  profiles: { self: {} },
+const store = {};
+globalThis.localStorage = {
+  getItem: (k) => (k in store ? store[k] : null),
+  setItem: (k, v) => (store[k] = String(v)),
+  removeItem: (k) => delete store[k],
 };
 
-const profileSeed = () => ({
+const seed = (name) => ({
+  name,
   dayNumber: 1,
   streak: 0,
   lastDoneDate: null,
@@ -14,12 +18,13 @@ const profileSeed = () => ({
   seenTopics: [],
 });
 
-serverSim.profiles.self = profileSeed();
+const serverSim = { profiles: { anya: seed("Аня"), max: seed("Макс") } };
 
-const bundle = () => ({
-  meta: { active: "self", profiles: [{ id: "self", name: "Профиль" }] },
-  profiles: serverSim.profiles,
+const meta = () => ({
+  active: store["sf_user"] || null,
+  profiles: Object.entries(serverSim.profiles).map(([id, p]) => ({ id, name: p.name })),
 });
+const bundle = () => ({ meta: meta(), profiles: serverSim.profiles });
 
 let chatCount = 0;
 globalThis.fetch = async (url, opts = {}) => {
@@ -34,8 +39,15 @@ globalThis.fetch = async (url, opts = {}) => {
     case "/api/health":
       return json({ ok: true });
     case "/api/state": {
-      if (method === "PUT") serverSim.profiles.self = { ...serverSim.profiles.self, ...body };
+      if (method === "PUT" && body?.id && serverSim.profiles[body.id]) {
+        serverSim.profiles[body.id] = { ...serverSim.profiles[body.id], ...body };
+      }
       return json(bundle());
+    }
+    case "/api/profile": {
+      if (serverSim.profiles[body.id]) return json({ error: "Профиль уже существует" }, 409);
+      serverSim.profiles[body.id] = seed(body.name);
+      return json({ ok: true });
     }
     case "/api/topic":
       return json({
@@ -55,6 +67,7 @@ globalThis.fetch = async (url, opts = {}) => {
 };
 
 const s = await import("../src/store.js");
+const { getUserId, setUserId } = await import("../src/lib/api.js");
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -67,33 +80,33 @@ const ok = (cond, msg) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+setUserId("anya");
 await s.init();
 let db = s.getDb();
 ok(db.boot === "ok", "boot=ok после init");
-ok(db.meta.active === "self", "активный профиль = self");
-ok(!!db.self, "профиль загружен");
+ok(db.meta.active === "anya", "активный профиль = Аня");
+ok(!!db.anya, "профиль Ани загружен");
 
 await sleep(0);
 await s.ensureTopic();
 db = s.getDb();
-ok(db.self.topic?.words?.length === 10, "тема сгенерирована через API");
-ok(db.self.topicDate, "topicDate проставлен");
+ok(db.anya.topic?.words?.length === 10, "тема сгенерирована через API");
+ok(db.anya.topicDate, "topicDate проставлен");
 
-db.self.topic.words.forEach((_, i) => s.answerCard(i, true));
+db.anya.topic.words.forEach((_, i) => s.answerCard(i, true));
 db = s.getDb();
-ok(db.self.today.cards.done, "карточки done (клиент+сервер)");
-ok(db.self.words.length === 10, "10 слов в словаре");
+ok(db.anya.today.cards.done, "карточки done (клиент+сервер)");
+ok(db.anya.words.length === 10, "10 слов в словаре");
 await sleep(5);
-const saved = serverSim.profiles.self;
-ok(saved.today.cards.done === true, "прогресс дошёл до сервера (PUT)");
+ok(serverSim.profiles.anya.today.cards.done === true, "прогресс Ани дошёл до сервера (PUT)");
 
 await s.startQuiz();
 db = s.getDb();
-ok(db.self.today.quiz.questions.length === 5, "5 вопросов (клиентский fallback)");
-const qs = db.self.today.quiz.questions;
+ok(db.anya.today.quiz.questions.length === 5, "5 вопросов (клиентский fallback)");
+const qs = db.anya.today.quiz.questions;
 qs.forEach((_, i) => s.answerQuiz(i, qs[i].answer));
 db = s.getDb();
-ok(db.self.today.quiz.done && db.self.today.quiz.correct === 5, "квиз 5/5");
+ok(db.anya.today.quiz.done && db.anya.today.quiz.correct === 5, "квиз 5/5");
 
 const opener = await s.chatSend(null);
 ok(!!opener, "чат: openер от сервера");
@@ -102,20 +115,44 @@ for (let i = 0; i < 3; i++) {
   await sleep(5);
 }
 db = s.getDb();
-ok(db.self.today.chat.done, "чат done после 3 реплик");
+ok(db.anya.today.chat.done, "чат done после 3 реплик");
 
 s.startListen();
 db = s.getDb();
-db.self.today.listen.questions.forEach((_, i) => s.answerListen(i, db.self.today.listen.questions[i].answer));
+db.anya.today.listen.questions.forEach((_, i) => s.answerListen(i, db.anya.today.listen.questions[i].answer));
 db = s.getDb();
-ok(db.self.today.listen.done && db.self.today.listen.correct === 5, "слушание 5/5");
+ok(db.anya.today.listen.done && db.anya.today.listen.correct === 5, "слушание 5/5");
 
-ok(s.todayDone(db.self) === 4, "все 4 квеста закрыты");
+ok(s.todayDone(db.anya) === 4, "все 4 квеста закрыты");
 s.completeToday();
 db = s.getDb();
-ok(db.self.streak === 1, "стрик 1 после закрытия");
+ok(db.anya.streak === 1, "стрик Ани 1 после закрытия");
 await sleep(5);
-ok(serverSim.profiles.self.streak === 1, "стрик синхронизирован на сервер");
+ok(serverSim.profiles.anya.streak === 1, "стрик Ани синхронизирован на сервер");
+
+await s.addProfile("Макс");
+db = s.getDb();
+ok(db.meta.active !== "anya", "после создания активный профиль сменился");
+const maxId = db.meta.active;
+ok(!!db[maxId] && db[maxId].name === "Макс", "профиль Макс создан и активен");
+ok(getUserId() === maxId, "id сохранён в localStorage");
+ok(!(db[maxId].words.length) && db[maxId].streak === 0 && !db[maxId].today.cards.done, "у Макса нет прогресса Ани (разделение)");
+
+await s.selectProfile("anya");
+db = s.getDb();
+ok(db.meta.active === "anya", "переключение обратно на Аню");
+ok(db.anya.streak === 1 && db.anya.words.length === 10, "прогресс Ани сохранён после переключений");
+
+removeStored();
+await s.init();
+db = s.getDb();
+ok(db.boot === "pick", "без сохранённого id → экран выбора профиля");
+
+function removeStored() {
+  try {
+    localStorage.removeItem("sf_user");
+  } catch (e) {}
+}
 
 console.log(fails === 0 ? "\nALL PASS ✓" : `\n${fails} FAILURES`);
 process.exit(fails === 0 ? 0 : 1);

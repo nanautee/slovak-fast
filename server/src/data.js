@@ -4,13 +4,11 @@ import { dirname } from "node:path";
 const dataDir = () => process.env.DATA_DIR || "./data";
 const dbFile = () => process.env.DB_FILE || `${dataDir()}/store.json`;
 
-export const SELF_ID = "self";
-
 let db = null;
 
-function seedProfile() {
+function seedProfile(name = "") {
   return {
-    name: "",
+    name,
     dayNumber: 1,
     streak: 0,
     lastDoneDate: null,
@@ -28,13 +26,20 @@ function seedProfile() {
   };
 }
 
-function legacyProfile(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  if (raw.profiles) {
-    const keys = Object.keys(raw.profiles);
-    if (keys.length) return raw.profiles[keys[0]];
+function legacyProfiles(raw) {
+  const out = {};
+  if (raw && raw.profiles && typeof raw.profiles === "object") {
+    for (const [id, p] of Object.entries(raw.profiles)) {
+      if (!p || typeof p !== "object") continue;
+      let name = "Игрок";
+      if (Array.isArray(raw.users)) {
+        const u = raw.users.find((x) => x.id === id);
+        if (u && u.name) name = u.name;
+      }
+      out[id] = sanitize({ ...p, name });
+    }
   }
-  return null;
+  return out;
 }
 
 function load() {
@@ -42,13 +47,13 @@ function load() {
   try {
     if (existsSync(dbFile())) {
       const raw = JSON.parse(readFileSync(dbFile(), "utf8"));
-      db = { self: sanitize(legacyProfile(raw)) };
+      db = { profiles: legacyProfiles(raw) };
       return db;
     }
   } catch (e) {
     console.error("data store corrupted, starting fresh:", e.message);
   }
-  db = { self: seedProfile() };
+  db = { profiles: {} };
   return db;
 }
 
@@ -59,7 +64,7 @@ function persist() {
 }
 
 function sanitize(p) {
-  const base = seedProfile();
+  const base = seedProfile(p && p.name);
   return {
     ...base,
     ...(p || {}),
@@ -71,20 +76,34 @@ function sanitize(p) {
 }
 
 export function listUsers() {
-  return [{ id: SELF_ID, name: "Профиль" }];
+  return Object.entries(load().profiles).map(([id, p]) => ({ id, name: (p && p.name) || "" }));
 }
 
-export function getProfile() {
-  return load().self;
+export function getProfile(id) {
+  return load().profiles[id] || null;
+}
+
+export function createProfile(id, name) {
+  const d = load();
+  if (d.profiles[id]) throw Object.assign(new Error("Профиль уже существует"), { status: 409 });
+  const key = name.trim().toLowerCase();
+  if (Object.values(d.profiles).some((p) => (p.name || "").trim().toLowerCase() === key)) {
+    throw Object.assign(new Error("Имя уже занято"), { status: 409 });
+  }
+  d.profiles[id] = sanitize(seedProfile(name.trim()));
+  persist();
+  return { id, name: name.trim() };
 }
 
 export function usersMeta() {
-  return { active: SELF_ID, profiles: [{ id: SELF_ID, name: "Профиль" }] };
+  return { profiles: listUsers() };
 }
 
-export function setProfile(profile) {
+export function setProfile(id, profile) {
   load();
-  db.self = sanitize(profile);
+  const prev = getProfile(id) || {};
+  const name = (profile && profile.name) || prev.name || "";
+  db.profiles[id] = sanitize({ ...(profile || {}), name });
   persist();
-  return db.self;
+  return db.profiles[id];
 }

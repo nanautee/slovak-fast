@@ -14,9 +14,26 @@ async function request(path, options = {}) {
   return r.json();
 }
 
+export const USER_KEY = "sf_user";
+
+export function getUserId() {
+  try {
+    return localStorage.getItem(USER_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+}
+export function setUserId(id) {
+  try {
+    if (id) localStorage.setItem(USER_KEY, id);
+    else localStorage.removeItem(USER_KEY);
+  } catch (e) {}
+}
+
 export const api = {
   state: () => request("/api/state"),
-  save: (profile) => request("/api/state", { method: "PUT", body: JSON.stringify(profile) }),
+  createProfile: (id, name) => request("/api/profile", { method: "POST", body: JSON.stringify({ id, name }) }),
+  save: (id, profile) => request("/api/state", { method: "PUT", body: JSON.stringify({ id, ...profile }) }),
   topic: (dayNumber, seenTopics) => request("/api/topic", { method: "POST", body: JSON.stringify({ dayNumber, seenTopics }) }),
   quiz: (topic) => request("/api/quiz", { method: "POST", body: JSON.stringify({ topic }) }),
   chat: (topic, msgs, opener, dayNumber) =>

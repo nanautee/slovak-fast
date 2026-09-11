@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api } from "./lib/api.js";
+import { api, getUserId, setUserId } from "./lib/api.js";
 
 const INTERVALS = [1, 2, 4, 7, 15, 30, 60];
 
@@ -57,9 +57,9 @@ function mutate(fn) {
   db = { ...db, [active]: valid(next) };
   notify();
 }
-function hydrate(payload) {
+function hydrate(payload, active) {
   const meta = payload.meta || { profiles: [], active: null };
-  db = { boot: "ok", meta };
+  db = { boot: "ok", meta: { ...meta, active: active || meta.active || null } };
   for (const [id, profile] of Object.entries(payload.profiles || {})) db[id] = valid(profile);
 }
 
@@ -143,7 +143,7 @@ async function syncState() {
   const active = db.meta.active;
   if (!active) return;
   try {
-    hydrate(await api.save(db[active]));
+    hydrate(await api.save(active, db[active]));
   } catch (e) {}
 }
 
@@ -152,13 +152,38 @@ export async function init() {
   if (booting) return;
   booting = true;
   try {
-    hydrate(await api.state());
+    const payload = await api.state();
+    const stored = getUserId();
+    hydrate(payload, stored);
+    if (!db.meta.active || !db[db.meta.active]) {
+      if (stored) {
+        hydrate(await api.save(stored, defaultProfile()));
+      } else {
+        db = { ...db, boot: "pick" };
+        notify();
+      }
+    }
   } catch (e) {
     db = { ...emptyDb(), boot: "offline" };
     notify();
   } finally {
     booting = false;
   }
+}
+
+export async function addProfile(name) {
+  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+  await api.createProfile(id, name.trim());
+  setUserId(id);
+  hydrate(await api.state(), id);
+  notify();
+  return id;
+}
+
+export async function selectProfile(id) {
+  setUserId(id);
+  hydrate(await api.state(), id);
+  notify();
 }
 
 export async function ensureTopic() {

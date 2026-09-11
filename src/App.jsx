@@ -11,6 +11,7 @@ import Quiz from "./pages/Quiz.jsx";
 import Listen from "./pages/Listen.jsx";
 import Progress from "./pages/Progress.jsx";
 import Settings from "./pages/Settings.jsx";
+import Profiles from "./pages/Profiles.jsx";
 
 export default function App() {
   const db = useDb();
@@ -28,6 +29,7 @@ export default function App() {
   }, []);
 
   if (!profile) {
+    if (db.boot === "pick") return <Profiles />;
     if (db.boot === "offline")
       return (
         <div className="min-h-full flex flex-col items-center justify-center gap-4 px-6">
