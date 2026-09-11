@@ -143,7 +143,7 @@ async function syncState() {
   const active = db.meta.active;
   if (!active) return;
   try {
-    hydrate(await api.save(active, db[active]));
+    hydrate(await api.save(active, db[active]), active);
   } catch (e) {}
 }
 
@@ -270,7 +270,7 @@ function gradeWord(list, w, known) {
 export function answerCard(index, known) {
   mutate((p) => {
     const words = p.topic.words.map((w, i) => (i === index ? { ...w, graded: known } : w));
-    const graded = words.filter((w) => w.graded).length;
+    const graded = words.filter((w) => w.graded !== undefined).length;
     const correct = words.filter((w) => w.graded === true).length;
     const total = words.length;
     return {

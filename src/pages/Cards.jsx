@@ -16,9 +16,9 @@ export default function Cards({ setRoute }) {
   }
 
   const words = topic.words;
-  const graded = words.filter((w) => w.graded).length;
+  const graded = words.filter((w) => w.graded !== undefined).length;
   const allDone = graded === words.length;
-  const current = words.findIndex((w) => !w.graded);
+  const current = words.findIndex((w) => w.graded === undefined);
   const card = allDone ? null : words[current];
   const progress = Math.round((graded / words.length) * 100);
 

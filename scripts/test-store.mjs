@@ -103,9 +103,11 @@ db = s.getDb();
 ok(db.anya.topic?.words?.length === 10, "тема сгенерирована через API");
 ok(db.anya.topicDate, "topicDate проставлен");
 
-db.anya.topic.words.forEach((_, i) => s.answerCard(i, true));
+db.anya.topic.words.forEach((_, i) => s.answerCard(i, i < 3 ? false : true));
 db = s.getDb();
 ok(db.anya.today.cards.done, "карточки done (клиент+сервер)");
+ok(db.meta.active === "anya", "активный профиль не теряется после syncState (no-mascot-fix)");
+ok(db.anya.today.cards.correct === 7, "«не знаю» (3 шт.) учитывается, но не как выученное");
 ok(db.anya.words.length === 10, "10 слов в словаре");
 await sleep(5);
 ok(serverSim.profiles.anya.today.cards.done === true, "прогресс Ани дошёл до сервера (PUT)");

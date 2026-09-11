@@ -86,6 +86,12 @@ export default function Progress({ setRoute }) {
             ))}
           </div>
         )}
+        <button
+          onClick={() => setRoute("dict")}
+          className="mt-4 w-full bg-orange-50 text-orange-600 font-bold py-3 rounded-2xl border border-orange-100 active:scale-[0.98] transition-transform text-sm"
+        >
+          Открыть словарь с переводами →
+        </button>
       </div>
 
       <p className="text-center text-xs text-stone-400 pb-2">

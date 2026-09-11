@@ -4,6 +4,7 @@ export default function BottomNav({ active, onNav, state }) {
     { id: "cards", label: "Карточки", emoji: "🃏", badge: state?.today?.cards && !state.today.cards.done },
     { id: "chat", label: "Чат", emoji: "💬", badge: state?.today?.chat && !state.today.chat.done },
     { id: "quiz", label: "Тест", emoji: "📝", badge: state?.today?.quiz && !state.today.quiz.done },
+    { id: "dict", label: "Словарь", emoji: "📖" },
     { id: "progress", label: "Прогресс", emoji: "📊" },
   ];
   return (
