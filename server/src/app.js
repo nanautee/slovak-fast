@@ -119,7 +119,7 @@ app.post("/api/topic", async (c) => {
         return c.json({
           sk: t.topic || t.topicSk || "",
           ru: t.topicRu || "",
-          words: t.words.slice(0, 10).map((w) => ({ sk: w.sk, ru: w.ru })),
+          words: t.words.slice(0, 15).map((w) => ({ sk: w.sk, ru: w.ru })),
           example: t.example || "",
         });
       }

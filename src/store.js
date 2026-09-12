@@ -34,6 +34,8 @@ const defaultProfile = () => ({
   words: [],
   history: [],
   seenTopics: [],
+  reviewDeck: null,
+  reviewResult: null,
 });
 
 const emptyDb = () => ({
@@ -103,7 +105,7 @@ export function questList(p) {
   const quizMeta = t.quiz.total ? `${t.quiz.correct}/${t.quiz.total}` : "0/5";
   const listenMeta = t.listen.total ? `${t.listen.correct}/${t.listen.total}` : "0/5";
   return [
-    { id: "cards", emoji: "🃏", title: "Карточки", sk: "Kartičky", done: t.cards.done, detail: `${t.cards.correct}/${t.cards.total || (p.topic ? p.topic.words.length : 10)}` },
+    { id: "cards", emoji: "🃏", title: "Карточки", sk: "Kartičky", done: t.cards.done, detail: `${t.cards.correct}/${t.cards.total || (p.topic ? p.topic.words.length : 15)}` },
     { id: "chat", emoji: "💬", title: "Чат", sk: "Rozhovor", done: t.chat.done, detail: `3 реплики`, meta: `${t.chat.lines}/3` },
     { id: "quiz", emoji: "📝", title: "Тест", sk: "Test", done: t.quiz.done, detail: `5 вопросов`, meta: quizMeta },
     { id: "listen", emoji: "🎧", title: "Слушание", sk: "Počúvanie", done: t.listen.done, detail: `5 фраз`, meta: listenMeta },
@@ -116,6 +118,12 @@ const FALLBACK_TOPICS = [
   ["Kuchyňa", "Кухня"], ["Zvieratá", "Животные"], ["Doprava", "Транспорт"],
   ["V kaviarni", "В кафе"], ["Oblečenie", "Одежда"], ["Peniaze", "Деньги"],
   ["Dom", "Дом"], ["Počasie", "Погода"],
+];
+
+const FALLBACK_WORDS = [
+  ["mačka","кошка"],["pes","собака"],["dom","дом"],["voda","вода"],["chlieb","хлеб"],
+  ["kava","кофе"],["auto","машина"],["ulica","улица"],["strom","дерево"],["slnko","солнце"],
+  ["kniha","книга"],["škola","школа"],["priateľ","друг"],["hra","игра"],["pieseň","песня"],
 ];
 
 async function syncState() {
@@ -200,12 +208,7 @@ export async function ensureTopic() {
     const [sk, ru] = FALLBACK_TOPICS[n % FALLBACK_TOPICS.length];
     topic = {
       sk, ru, example: "",
-      words: [
-        { sk: "mačka", ru: "кошка" }, { sk: "pes", ru: "собака" }, { sk: "dom", ru: "дом" },
-        { sk: "voda", ru: "вода" }, { sk: "chlieb", ru: "хлеб" }, { sk: "kava", ru: "кофе" },
-        { sk: "auto", ru: "машина" }, { sk: "ulica", ru: "улица" }, { sk: "strom", ru: "дерево" },
-        { sk: "slnko", ru: "солнце" },
-      ],
+      words: FALLBACK_WORDS.map(([s, r]) => ({ sk: s, ru: r })),
     };
   }
   mutate((pr) => {
@@ -219,12 +222,24 @@ export async function ensureTopic() {
 
 function gradeWord(list, w, known) {
   const exists = list.some((x) => x.sk === w.sk);
-  if (!exists) return [...list, { sk: w.sk, ru: w.ru, box: known ? 1 : 0, next: dayAhead(known ? INTERVALS[0] : 1), correct: known ? 1 : 0 }];
+  if (!exists) {
+    return [
+      ...list,
+      {
+        sk: w.sk,
+        ru: w.ru,
+        box: known ? 1 : 0,
+        next: dayAhead(known ? INTERVALS[0] : 1),
+        correct: known ? 1 : 0,
+        mark: known ? "learned" : "unknown",
+      },
+    ];
+  }
   return list.map((x) => {
     if (x.sk !== w.sk) return x;
-    if (!known) return { ...x, box: 0, next: dayAhead(1) };
+    if (!known) return { ...x, box: 0, next: dayAhead(1), mark: "unknown" };
     const box = Math.min(x.box + 1, INTERVALS.length - 1);
-    return { ...x, box, next: dayAhead(INTERVALS[box]), correct: x.correct + 1 };
+    return { ...x, box, next: dayAhead(INTERVALS[box]), correct: x.correct + 1, mark: "learned" };
   });
 }
 
@@ -242,6 +257,37 @@ export function answerCard(index, known) {
     };
   });
   syncState();
+}
+
+/* ---------- Повторение из словаря ---------- */
+
+export function startReview(words) {
+  if (!Array.isArray(words) || !words.length) return;
+  mutate((p) => ({
+    ...p,
+    reviewDeck: words.map((w) => ({ sk: w.sk, ru: w.ru })),
+    reviewResult: null,
+  }));
+  syncState();
+}
+
+export function answerReview(index, known) {
+  mutate((p) => {
+    const deck = [...p.reviewDeck];
+    deck[index] = { ...deck[index], graded: known };
+    const words = gradeWord(p.words, deck[index], known);
+    const graded = deck.filter((w) => w.graded !== undefined).length;
+    if (graded === deck.length) {
+      const correct = deck.filter((w) => w.graded === true).length;
+      return { ...p, words, reviewDeck: null, reviewResult: { correct, total: deck.length } };
+    }
+    return { ...p, words, reviewDeck: deck };
+  });
+  syncState();
+}
+
+export function exitReview() {
+  mutate((p) => ({ ...p, reviewDeck: null, reviewResult: null }));
 }
 
 /* ---------- Chat ---------- */
@@ -272,11 +318,6 @@ function fallbackReply(p, n) {
   const pool = ["Výborne! A čo ešte chceš povedať?", "Rozumiem! Dnes je téma " + (p.topic?.ru || "") + ".",
     "Super! Pokračuj, polož mi otázku po slovensky!", "Skvelé slovo! Skús ho použiť v odpovedi."];
   return pool[(p.dayNumber + n) % pool.length];
-}
-
-export function chatReset() {
-  mutate((p) => ({ ...p, today: { ...p.today, chat: { done: false, lines: 0, msgs: [], opener: "" } } }));
-  syncState();
 }
 
 /* ---------- Quiz ---------- */

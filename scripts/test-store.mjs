@@ -66,7 +66,7 @@ globalThis.fetch = async (url, opts = {}) => {
   }
 
   if (path === "/api/topic")
-    return json({ sk: "Zvieratá", ru: "Животные", example: "Mačka spí.", words: Array.from({ length: 10 }, (_, i) => ({ sk: `slovo${i}`, ru: `перевод${i}` })) });
+    return json({ sk: "Zvieratá", ru: "Животные", example: "Mačka spí.", words: Array.from({ length: 15 }, (_, i) => ({ sk: `slovo${i}`, ru: `перевод${i}` })) });
   if (path === "/api/quiz") return json({ questions: [] });
   if (path === "/api/chat") return json({ reply: `reply: ${body.msgs?.length || 0}` });
   return json({ error: "not found" }, 404);
@@ -92,7 +92,7 @@ ok(db[db.meta.active].name === "Аня", "профиль создан с име�
 
 await s.ensureTopic();
 db = s.getDb();
-ok(db[db.meta.active].topic?.words?.length === 10, "тема сгенерирована через API");
+ok(db[db.meta.active].topic?.words?.length === 15, "тема сгенерирована с 15 словами");
 
 /* --- карточки (+ не теряем active, «не знаю») --- */
 const words = [...db[db.meta.active].topic.words];
@@ -100,8 +100,8 @@ words.forEach((_, i) => s.answerCard(i, i < 3 ? false : true));
 db = s.getDb();
 ok(db[db.meta.active].today.cards.done, "карточки done");
 ok(store["sf_token"] === token, "токен не меняется при сохранении");
-ok(db[db.meta.active].today.cards.correct === 7, "3 «не знаю» — не ошибка, но и не правильные");
-ok(db[db.meta.active].words.length === 10, "10 слов в словаре");
+ok(db[db.meta.active].today.cards.correct === 12, "3 «не знаю»: 12 из 15 правильных");
+ok(db[db.meta.active].words.length === 15, "15 слов в словаре");
 await sleep(5);
 ok(S.profiles[token].today.cards.done === true, "прогресс сохранён на «сервер» (PUT)");
 
@@ -117,6 +117,29 @@ db = s.getDb();
 db[db.meta.active].today.listen.questions.forEach((_, i) => s.answerListen(i, db[db.meta.active].today.listen.questions[i].answer));
 db = s.getDb();
 ok(s.todayDone(db[db.meta.active]) === 4, "все 4 квеста закрыты");
+
+/* --- чат продолжается после 3 сообщений, не сбрасывается --- */
+const msgCountBefore = db[db.meta.active].today.chat.msgs.length;
+await s.chatSend("Сообщение 4");
+db = s.getDb();
+const chat = db[db.meta.active].today.chat;
+ok(chat.done === true, "задание остаётся засчитанным после 4-го сообщения");
+ok(chat.lines === 4, "счётчик реплик вырос до 4");
+ok(chat.msgs.length === msgCountBefore + 2, "история сохранена, ничего не сброшено");
+
+/* --- повторение из словаря --- */
+const revWords = db[db.meta.active].words.slice(0, 3);
+s.startReview(revWords);
+db = s.getDb();
+ok(db[db.meta.active].reviewDeck?.length === 3, "запущена колода повтора на 3 слова");
+db[db.meta.active].reviewDeck.forEach((_, i) => s.answerReview(i, i % 2 === 0));
+db = s.getDb();
+ok(db[db.meta.active].reviewDeck === null, "колода закрыта после последней карточки");
+ok(db[db.meta.active].reviewResult?.correct === 2 && db[db.meta.active].reviewResult?.total === 3, "результат повтора 2/3");
+s.exitReview();
+db = s.getDb();
+ok(db[db.meta.active].reviewResult === null, "экран результата закрыт по кнопке");
+
 s.completeToday();
 db = s.getDb();
 ok(db[db.meta.active].streak === 1, "стрик 1");

@@ -1,13 +1,44 @@
 import { useState } from "react";
-import { useProfile, answerCard } from "../store.js";
+import { useProfile, answerCard, answerReview, exitReview } from "../store.js";
 import Mascot from "../components/Mascot.jsx";
 
 export default function Cards({ setRoute }) {
   const profile = useProfile();
-  const topic = profile.topic;
-  const [showBack, setShowBack] = useState(null);
+  const deck = profile.reviewDeck;
+  const result = profile.reviewResult;
 
-  if (!topic || !topic.words?.length) {
+  if (result) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-16 gap-4">
+        <div className="animate-pop">
+          <Mascot size={110} bounce />
+        </div>
+        <div className="text-2xl font-extrabold">
+          {Math.round((result.correct / result.total) * 100) >= 80
+            ? "Naučené! (=^･ω･^=)"
+            : "Ešte si to zopakuj. (•_•)"}
+        </div>
+        <div className="text-stone-400 text-sm">
+          Знаешь {result.correct} из {result.total} слов на повторе
+        </div>
+        <button
+          onClick={() => { exitReview(); setRoute("dict"); }}
+          className="w-full max-w-xs bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold py-4 rounded-2xl shadow-lg shadow-orange-200/60 active:scale-[0.98] transition-transform"
+        >
+          В словарь
+        </button>
+        <button
+          onClick={() => { exitReview(); setRoute("today"); }}
+          className="text-sm text-stone-400 underline"
+        >
+          На главную
+        </button>
+      </div>
+    );
+  }
+
+  const topic = profile.topic;
+  if (!deck && (!topic || !topic.words?.length)) {
     return (
       <div className="text-center text-stone-400 py-20">
         Тема ещё не готова. Подожди чуть-чуть, Mačka жарит. 🐱
@@ -15,30 +46,38 @@ export default function Cards({ setRoute }) {
     );
   }
 
-  const words = topic.words;
+  const words = deck || topic.words;
   const graded = words.filter((w) => w.graded !== undefined).length;
   const allDone = graded === words.length;
   const current = words.findIndex((w) => w.graded === undefined);
   const card = allDone ? null : words[current];
   const progress = Math.round((graded / words.length) * 100);
+  const isReview = !!deck;
+
+  const rate = (ok) => {
+    if (isReview) answerReview(current, ok);
+    else answerCard(current, ok);
+    setShowBack(null);
+  };
 
   if (allDone) {
+    if (isReview) {
+      // последняя карточка закрывает колоду через reviewResult, экран выше
+      return null;
+    }
     return (
       <DoneScreen correct={profile.today.cards.correct} total={words.length} onDone={() => setRoute("today")} />
     );
   }
 
-  const rate = (ok) => {
-    answerCard(current, ok);
-    setShowBack(null);
-  };
-
   return (
     <div className="flex flex-col min-h-[70vh]">
       <div className="flex justify-between items-center mb-3">
         <div>
-          <div className="font-extrabold text-lg">{topic.sk}</div>
-          <div className="text-xs text-stone-400">{topic.ru}</div>
+          <div className="font-extrabold text-lg">{isReview ? "Повторение" : topic.sk}</div>
+          <div className="text-xs text-stone-400">
+            {isReview ? `${words.length} слов на повторе` : topic.ru}
+          </div>
         </div>
         <span className="text-sm font-bold text-orange-600">{graded}/{words.length}</span>
       </div>
@@ -86,7 +125,9 @@ export default function Cards({ setRoute }) {
           ✅ Знаю!
         </button>
       </div>
-      <div className="text-center text-xs text-stone-400 mt-3">{progress}% сегодня</div>
+      <div className="text-center text-xs text-stone-400 mt-3">
+        {isReview ? "повторение из словаря" : `${progress}% сегодня`}
+      </div>
     </div>
   );
 }

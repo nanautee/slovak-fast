@@ -120,7 +120,7 @@ test("delete: только по своему токену", async () => {
 test("topic/quiz/chat работают без авторизации", async () => {
   const t = await call("POST", "/api/topic", { dayNumber: 1, seenTopics: [] });
   assert.equal(t.status, 200);
-  assert.equal(t.json.words.length, 10);
+  assert.equal(t.json.words.length, 15);
 
   const q = await call("POST", "/api/quiz", { topic: t.json });
   assert.equal(q.status, 200);
