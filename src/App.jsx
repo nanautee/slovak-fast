@@ -76,22 +76,21 @@ export default function App() {
               <div className="text-[10px] text-stone-400">{levelFor(profile.dayNumber)}</div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1 bg-white border border-orange-200 rounded-full px-2.5 py-1 text-sm font-bold text-stone-700">
-              <span className="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 bg-white border border-orange-200 rounded-full px-2.5 py-1 text-sm font-bold text-stone-700 shrink-0">
+              <span className="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center shrink-0">
                 {(profile.name || "И")[0]?.toUpperCase()}
               </span>
-              <span className="max-w-[64px] truncate">{profile.name || "Игрок"}</span>
+              <span className="max-w-[72px] truncate">{profile.name || "Игрок"}</span>
             </span>
-            <span className="flex items-center gap-1 bg-orange-100 rounded-full px-2.5 py-1 text-sm font-bold text-orange-600">
+            <span className="flex items-center gap-1.5 bg-orange-100 rounded-full px-2.5 py-1 text-sm font-bold text-orange-600 shrink-0">
               🔥 {profile.streak}
-            </span>
-            <span className="text-xs text-stone-400">
-              {todayDone(profile)}/{todayTotal()}
+              <span className="text-orange-300">·</span>
+              <span className="text-xs">{todayDone(profile)}/{todayTotal()}</span>
             </span>
             <button
               onClick={() => setRoute(route === "settings" ? "today" : "settings")}
-              className="w-9 h-9 rounded-full bg-white border border-orange-100 flex items-center justify-center text-lg"
+              className="w-9 h-9 rounded-full bg-white border border-orange-100 flex items-center justify-center text-lg shrink-0"
             >
               ⚙️
             </button>

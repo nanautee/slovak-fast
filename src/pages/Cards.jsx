@@ -6,6 +6,7 @@ export default function Cards({ setRoute }) {
   const profile = useProfile();
   const deck = profile.reviewDeck;
   const result = profile.reviewResult;
+  const [showBack, setShowBack] = useState(null);
 
   if (result) {
     return (
@@ -71,18 +72,18 @@ export default function Cards({ setRoute }) {
   }
 
   return (
-    <div className="flex flex-col min-h-[70vh]">
+    <div className="flex flex-col">
       <div className="flex justify-between items-center mb-3">
-        <div>
-          <div className="font-extrabold text-lg">{isReview ? "Повторение" : topic.sk}</div>
+        <div className="min-w-0">
+          <div className="font-extrabold text-lg truncate">{isReview ? "Повторение" : topic.sk}</div>
           <div className="text-xs text-stone-400">
             {isReview ? `${words.length} слов на повторе` : topic.ru}
           </div>
         </div>
-        <span className="text-sm font-bold text-orange-600">{graded}/{words.length}</span>
+        <span className="text-sm font-bold text-orange-600 shrink-0">{graded}/{words.length}</span>
       </div>
 
-      <div className="flex gap-1 mb-4">
+      <div className="flex gap-1 mb-5">
         {words.map((w, i) => (
           <div
             key={i}
@@ -91,27 +92,27 @@ export default function Cards({ setRoute }) {
         ))}
       </div>
 
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex justify-center pt-2 pb-6">
         <div
           className={`card-flip w-full max-w-sm cursor-pointer select-none ${showBack === null ? "" : "flipped"}`}
           onClick={() => setShowBack((s) => (s === null ? "back" : null))}
         >
-          <div className="card-inner relative w-full h-72">
+          <div className="card-inner relative w-full h-64 md:h-72">
             <div className="card-face absolute inset-0 bg-white rounded-3xl border-2 border-orange-200 shadow-xl flex flex-col items-center justify-center gap-3 p-6">
               <Mascot size={44} />
-              <div className="text-4xl font-extrabold text-center text-stone-800">{card.sk}</div>
+              <div className="text-4xl font-extrabold text-center text-stone-800 break-words">{card.sk}</div>
               <div className="text-xs text-stone-400">нажми, чтобы увидеть перевод</div>
             </div>
             <div className="card-face card-back absolute inset-0 bg-orange-500 rounded-3xl shadow-xl flex flex-col items-center justify-center gap-3 p-6 text-white">
               <div className="text-sm text-orange-200">{card.sk}</div>
-              <div className="text-4xl font-extrabold text-center">{card.ru}</div>
+              <div className="text-4xl font-extrabold text-center break-words">{card.ru}</div>
               <div className="text-xs text-orange-100">знаешь это слово?</div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex gap-3 mt-6">
+      <div className="flex gap-3">
         <button
           onClick={() => rate(false)}
           className="flex-1 bg-stone-100 text-stone-600 font-bold py-4 rounded-2xl active:scale-[0.97] transition-transform"
@@ -125,7 +126,7 @@ export default function Cards({ setRoute }) {
           ✅ Знаю!
         </button>
       </div>
-      <div className="text-center text-xs text-stone-400 mt-3">
+      <div className="text-center text-xs text-stone-400 mt-3 pb-2">
         {isReview ? "повторение из словаря" : `${progress}% сегодня`}
       </div>
     </div>
