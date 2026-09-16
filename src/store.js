@@ -3,19 +3,27 @@ import { api, getToken, setToken, clearToken } from "./lib/api.js";
 
 const INTERVALS = [1, 2, 4, 7, 15, 30, 60];
 
-const pad = (n) => String(n).padStart(2, "0");
-export const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const TZ = "Asia/Novosibirsk";
+const dateKey = (ts) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(ts));
+  const g = (t) => parts.find((p) => p.type === t)?.value || "";
+  return `${g("year")}-${g("month")}-${g("day")}`;
 };
-export const yesterdayStr = () => {
-  const d = new Date(Date.now() - 86400000);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-const dayAhead = (n) => {
-  const d = new Date(Date.now() + n * 86400000);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+export const todayStr = () => dateKey(Date.now());
+export const yesterdayStr = () => dateKey(Date.now() - 86400000);
+const dayAhead = (n) => dateKey(Date.now() + n * 86400000);
+
+/* основа слова без падежных окончаний — чтобы «kávu» не стало новым после «kava» */
+function wordKey(s) {
+  let w = String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  w = w.replace(/(ov|och|ou|om|mi|u|e|a|y|i)$/, "");
+  return w.length >= 3 ? w : String(s || "").toLowerCase();
+}
 
 export const emptyToday = () => ({
   cards: { done: false, correct: 0, total: 0 },
@@ -102,13 +110,13 @@ export function todayTotal() { return 4; }
 
 export function questList(p) {
   const t = p.today || emptyToday();
-  const quizMeta = t.quiz.total ? `${t.quiz.correct}/${t.quiz.total}` : "0/5";
-  const listenMeta = t.listen.total ? `${t.listen.correct}/${t.listen.total}` : "0/5";
+  const quizMeta = t.quiz.total ? `${t.quiz.correct}/${t.quiz.total}` : "0/10";
+  const listenMeta = t.listen.total ? `${t.listen.correct}/${t.listen.total}` : "0/15";
   return [
     { id: "cards", emoji: "🃏", title: "Карточки", sk: "Kartičky", done: t.cards.done, detail: `${t.cards.correct}/${t.cards.total || (p.topic ? p.topic.words.length : 15)}` },
     { id: "chat", emoji: "💬", title: "Чат", sk: "Rozhovor", done: t.chat.done, detail: `3 реплики`, meta: `${t.chat.lines}/3` },
-    { id: "quiz", emoji: "📝", title: "Тест", sk: "Test", done: t.quiz.done, detail: `5 вопросов`, meta: quizMeta },
-    { id: "listen", emoji: "🎧", title: "Слушание", sk: "Počúvanie", done: t.listen.done, detail: `5 фраз`, meta: listenMeta },
+    { id: "quiz", emoji: "📝", title: "Тест", sk: "Test", done: t.quiz.done, detail: `10 вопросов`, meta: quizMeta },
+    { id: "listen", emoji: "🎧", title: "Слушание", sk: "Počúvanie", done: t.listen.done, detail: `${(p.topic?.words?.length || 15)} фраз`, meta: listenMeta },
   ];
 }
 
@@ -213,7 +221,16 @@ export async function ensureTopic() {
   }
   mutate((pr) => {
     if (pr.topic) return pr;
-    return { ...pr, topic, seenTopics: pr.seenTopics.includes(topic.sk) ? pr.seenTopics : [...pr.seenTopics, topic.sk] };
+    const seenW = new Set();
+    const words = (topic.words || []).filter((w) => {
+      const k = wordKey(w.sk);
+      if (k.length >= 3 && seenW.has(k)) return false;
+      seenW.add(k);
+      return true;
+    });
+    if (words.length < 4) return pr;
+    const cleanTopic = { ...topic, words };
+    return { ...pr, topic: cleanTopic, seenTopics: pr.seenTopics.includes(topic.sk) ? pr.seenTopics : [...pr.seenTopics, topic.sk] };
   });
   syncState();
 }
@@ -221,8 +238,11 @@ export async function ensureTopic() {
 /* ---------- Cards ---------- */
 
 function gradeWord(list, w, known) {
-  const exists = list.some((x) => x.sk === w.sk);
-  if (!exists) {
+  const key = wordKey(w.sk);
+  const idx = list.findIndex(
+    (x) => x.sk === w.sk || (wordKey(x.sk) === key && key.length >= 3)
+  );
+  if (idx === -1) {
     return [
       ...list,
       {
@@ -235,12 +255,18 @@ function gradeWord(list, w, known) {
       },
     ];
   }
-  return list.map((x) => {
-    if (x.sk !== w.sk) return x;
-    if (!known) return { ...x, box: 0, next: dayAhead(1), mark: "unknown" };
-    const box = Math.min(x.box + 1, INTERVALS.length - 1);
-    return { ...x, box, next: dayAhead(INTERVALS[box]), correct: x.correct + 1, mark: "learned" };
-  });
+  const existing = list[idx];
+  const merged = { ...existing, sk: existing.sk || w.sk, ru: w.ru || existing.ru };
+  const nextList = list.map((x, i) => (i === idx ? merged : x));
+  if (!known) {
+    return nextList.map((x) =>
+      x === merged ? { ...x, box: 0, next: dayAhead(1), mark: "unknown" } : x
+    );
+  }
+  const box = Math.min(existing.box + 1, INTERVALS.length - 1);
+  return nextList.map((x) =>
+    x === merged ? { ...x, box, next: dayAhead(INTERVALS[box]), correct: x.correct + 1, mark: "learned" } : x
+  );
 }
 
 export function answerCard(index, known) {
@@ -327,6 +353,7 @@ export async function startQuiz() {
   let questions = [];
   try { questions = (await api.quiz(p.topic)).questions; } catch (e) {}
   if (!questions.length) questions = localQuiz(p.topic);
+  questions = questions.slice(0, 10);
   if (!questions.length) return false;
   mutate((pr) => ({
     ...pr,
@@ -344,11 +371,11 @@ function shuffle(arr) {
 
 function localQuiz(topic) {
   if (!topic || !topic.words?.length) return [];
-  const pool = shuffle(topic.words).slice(0, Math.min(5, topic.words.length));
+  const pool = shuffle(topic.words).slice(0, Math.min(10, topic.words.length));
   return pool.map((w) => {
     const wrong = shuffle(topic.words.filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
-    const options = shuffle([w.ru, ...wrong]);
-    return { q: `Как переводится «${w.sk}»?`, options, answer: options.indexOf(w.ru) };
+    const opz = shuffle([w.ru, ...wrong]);
+    return { q: `Как переводится «${w.sk}»?`, options: opz, answer: opz.indexOf(w.ru) };
   });
 }
 
@@ -369,11 +396,13 @@ export function answerQuiz(index, choice) {
 
 export function startListen() {
   mutate((p) => {
-    const pool = shuffle(p.topic.words || []).slice(0, Math.min(5, (p.topic.words || []).length));
+    const words = p.topic.words || [];
+    // слушаем все слова темы (до 15)
+    const pool = shuffle(words).slice(0, Math.min(15, words.length));
     const questions = pool.map((w) => {
-      const wrong = shuffle((p.topic.words || []).filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
-      const options = shuffle([w.ru, ...wrong]);
-      return { sk: w.sk, ru: w.ru, options, answer: options.indexOf(w.ru) };
+      const wrong = shuffle(words.filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
+      const opz = shuffle([w.ru, ...wrong]);
+      return { sk: w.sk, ru: w.ru, options: opz, answer: opz.indexOf(w.ru) };
     });
     return { ...p, today: { ...p.today, listen: { done: false, correct: 0, total: questions.length, questions, answered: 0 } } };
   });

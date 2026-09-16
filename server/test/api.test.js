@@ -124,11 +124,21 @@ test("topic/quiz/chat работают без авторизации", async () 
 
   const q = await call("POST", "/api/quiz", { topic: t.json });
   assert.equal(q.status, 200);
-  assert.equal(q.json.questions.length, 5);
+  assert.equal(q.json.questions.length, 10);
+  let firstAnswer = -1;
   for (const qu of q.json.questions) {
+    assert.equal(Array.isArray(qu.options), true);
     assert.equal(qu.options.length, 4);
-    assert.ok(qu.options[qu.answer] !== undefined);
+    const ans = qu.options[qu.answer];
+    assert.ok(ans !== undefined, "индекс answer валиден");
+    assert.ok(qu.options.includes(qu.options[qu.answer]), "вариант содержит правильный перевод");
+    firstAnswer = firstAnswer === -1 ? qu.answer : firstAnswer;
   }
+  assert.ok(q.json.questions.length >= 2, "минимум 2 вопроса для проверки позиций");
+  assert.ok(
+    q.json.questions.some((qu) => qu.answer !== 0),
+    "правильный ответ не всегда первый"
+  );
 
   const c = await call("POST", "/api/chat", {
     topic: { ru: "Животные", words: [{ sk: "mačka", ru: "кошка" }] },

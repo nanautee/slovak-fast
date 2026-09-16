@@ -59,15 +59,25 @@ export async function generateQuizJson(topic) {
   if (!KEY) throw new Error("no key");
   const words = (topic?.words || []).map((w) => `${w.sk} = ${w.ru}`).join("; ");
   const user = `Тема: ${topic.sk} (${topic.ru}). Слова: ${words}.
-Составь тест из 5 вопросов по этим словам (перевод со словацкого на русский или наоборот).
+Составь тест из 10 вопросов по этим словам (перевод со словацкого на русский или наоборот).
+ВАЖНО: варианты ответа для каждого вопроса перемешивай в случайном порядке, не ставь правильный всегда первым.
 Верни только JSON:
 {"questions":[
   {"q":"Как переводится «chlieb»?","options":["хлеб","молоко","сыр","мясо"],"answer":0}
 ]}
-answer — индекс правильного варианта (0-3). Только JSON.`;
+answer — индекс правильного варианта в ПЕРЕМЕШАННОМ списке. Только JSON.`;
   const parsed = extractJson(await callGroq(JSON_SYSTEM, user));
-  const qs = (parsed.questions || []).slice(0, 5);
-  return qs.filter((q) => Array.isArray(q.options) && q.options.length >= 2 && q.options[q.answer] !== undefined);
+  const qs = (parsed.questions || [])
+    .slice(0, 10)
+    .filter((q) => Array.isArray(q.options) && q.options.length >= 2 && q.options[q.answer] !== undefined);
+  return qs.map((q) => {
+    const shuffled = [...q.options];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return { ...q, options: shuffled, answer: shuffled.indexOf(q.options[q.answer]) };
+  });
 }
 
 export async function chatReply(topic, msgs, opener) {

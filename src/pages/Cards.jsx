@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useProfile, answerCard, answerReview, exitReview } from "../store.js";
+import { speak } from "../lib/tts.js";
 import Mascot from "../components/Mascot.jsx";
 
 export default function Cards({ setRoute }) {
@@ -112,7 +113,14 @@ export default function Cards({ setRoute }) {
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <button
+        onClick={() => speak(card.sk)}
+        className="mx-auto mt-4 flex items-center gap-2 bg-stone-100 text-stone-500 font-semibold text-sm rounded-full px-4 py-2 active:scale-95 transition-transform"
+      >
+        🔊 {card.sk}
+      </button>
+
+      <div className="flex gap-3 mt-3">
         <button
           onClick={() => rate(false)}
           className="flex-1 bg-stone-100 text-stone-600 font-bold py-4 rounded-2xl active:scale-[0.97] transition-transform"

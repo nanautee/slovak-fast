@@ -69,28 +69,29 @@ export default function App() {
     <div className="min-h-full bg-orange-50 text-stone-800">
       <header className="sticky top-0 z-30 bg-orange-50/90 backdrop-blur border-b border-orange-100">
         <div className="flex items-center justify-between px-4 py-2.5 max-w-[480px] mx-auto">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Mascot size={34} src="/logo.png" />
             <div className="leading-tight">
-              <div className="font-extrabold text-lg text-orange-600">SlovakFast</div>
-              <div className="text-[10px] text-stone-400">{levelFor(profile.dayNumber)}</div>
+              <div className="font-extrabold text-lg text-orange-600 leading-none">SlovakFast</div>
+              <div className="text-[10px] text-stone-400 mt-0.5">{levelFor(profile.dayNumber)}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 bg-white border border-orange-200 rounded-full px-2.5 py-1 text-sm font-bold text-stone-700 shrink-0">
-              <span className="w-5 h-5 rounded-full bg-orange-500 text-white text-[11px] flex items-center justify-center shrink-0">
-                {(profile.name || "И")[0]?.toUpperCase()}
-              </span>
-              <span className="max-w-[72px] truncate">{profile.name || "Игрок"}</span>
+          <div className="flex items-center gap-1.5 ml-2">
+            <span
+              title={profile.name || "Игрок"}
+              className="w-8 h-8 rounded-full bg-orange-500 text-white text-sm font-bold flex items-center justify-center shrink-0 cursor-pointer"
+              onClick={() => setRoute("settings")}
+            >
+              {(profile.name || "И")[0]?.toUpperCase()}
             </span>
-            <span className="flex items-center gap-1.5 bg-orange-100 rounded-full px-2.5 py-1 text-sm font-bold text-orange-600 shrink-0">
+            <span className="flex items-center gap-1 bg-orange-100 rounded-full px-2 py-1 text-sm font-bold text-orange-600 shrink-0">
               🔥 {profile.streak}
               <span className="text-orange-300">·</span>
               <span className="text-xs">{todayDone(profile)}/{todayTotal()}</span>
             </span>
             <button
               onClick={() => setRoute(route === "settings" ? "today" : "settings")}
-              className="w-9 h-9 rounded-full bg-white border border-orange-100 flex items-center justify-center text-lg shrink-0"
+              className="w-8 h-8 rounded-full bg-white border border-orange-100 flex items-center justify-center text-base shrink-0"
             >
               ⚙️
             </button>

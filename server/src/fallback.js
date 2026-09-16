@@ -242,7 +242,7 @@ export function fallbackTopic(dayNumber, seen, fallbackTopics = FALLBACK_TOPICS)
 export function localQuiz(topic) {
   if (!topic || !topic.words?.length) return [];
   const pool = shuffle(topic.words);
-  const picked = pool.slice(0, Math.min(5, topic.words.length));
+  const picked = pool.slice(0, Math.min(10, topic.words.length));
   return picked.map((w) => {
     const wrong = shuffle(topic.words.filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
     const options = shuffle([w.ru, ...wrong]);

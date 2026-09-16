@@ -29,7 +29,7 @@ export default function Quiz({ setRoute }) {
       <div className="flex flex-col items-center justify-center text-center py-16 gap-4">
         <Mascot size={100} />
         <div className="text-xl font-extrabold">Мини-тест по теме «{profile.topic?.ru || "…"}»</div>
-        <div className="text-stone-400 text-sm">5 вопросов. Сразу увидишь ответ!</div>
+          <div className="text-stone-400 text-sm">Проверим слова — ответ сразу видно!</div>
         <button
           onClick={begin}
           className="w-full max-w-xs bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold py-4 rounded-2xl shadow-lg shadow-orange-200/60 active:scale-[0.98] transition-transform"

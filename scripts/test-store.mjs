@@ -109,11 +109,13 @@ ok(S.profiles[token].today.cards.done === true, "прогресс сохранё
 await s.startQuiz();
 db = s.getDb();
 const qs = db[db.meta.active].today.quiz.questions;
+ok(qs.length === 10, "тест из 10 вопросов");
 qs.forEach((_, i) => s.answerQuiz(i, qs[i].answer));
 await s.chatSend(null);
 for (let i = 0; i < 3; i++) await s.chatSend(`Сообщение ${i}`);
 s.startListen();
 db = s.getDb();
+ok(db[db.meta.active].today.listen.total === 15, "слушание включает все 15 слов темы");
 db[db.meta.active].today.listen.questions.forEach((_, i) => s.answerListen(i, db[db.meta.active].today.listen.questions[i].answer));
 db = s.getDb();
 ok(s.todayDone(db[db.meta.active]) === 4, "все 4 квеста закрыты");
@@ -139,6 +141,14 @@ ok(db[db.meta.active].reviewResult?.correct === 2 && db[db.meta.active].reviewRe
 s.exitReview();
 db = s.getDb();
 ok(db[db.meta.active].reviewResult === null, "экран результата закрыт по кнопке");
+
+/* --- падежная форма не заводит новое слово (slovo1om → slovo1) --- */
+s.startReview([{ sk: "slovo1om", ru: "перевод1" }]);
+s.answerReview(0, true);
+s.exitReview();
+db = s.getDb();
+ok(db[db.meta.active].words.length === 15, "другая форма слова не задублирована в словаре");
+ok(db[db.meta.active].words.every((w) => w.sk !== "slovo1om"), "в словаре сохранена каноническая форма");
 
 s.completeToday();
 db = s.getDb();
