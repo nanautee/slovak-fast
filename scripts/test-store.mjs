@@ -110,6 +110,14 @@ await s.startQuiz();
 db = s.getDb();
 const qs = db[db.meta.active].today.quiz.questions;
 ok(qs.length === 10, "тест из 10 вопросов");
+ok(
+  qs.every((qu) => {
+    const qText = qu.q.replace(/[«»"]/g, "").toLowerCase().trim();
+    const uniq = new Set(qu.options.map((o) => o.toLowerCase()));
+    return uniq.size === qu.options.length && qu.options.every((o) => !qText.includes(o.toLowerCase()));
+  }),
+  "тест: нет дублей и ни один вариант не повторяет вопрос"
+);
 qs.forEach((_, i) => s.answerQuiz(i, qs[i].answer));
 await s.chatSend(null);
 for (let i = 0; i < 3; i++) await s.chatSend(`Сообщение ${i}`);

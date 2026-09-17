@@ -369,14 +369,26 @@ function shuffle(arr) {
   return a;
 }
 
+function isValidQuizQuestion(q) {
+  if (!q || !Array.isArray(q.options) || q.options.length < 2) return false;
+  if (q.answer < 0 || q.answer >= q.options.length) return false;
+  const opts = q.options.map((o) => String(o || "").trim());
+  if (opts.some((o) => !o)) return false;
+  if (new Set(opts.map((o) => o.toLowerCase())).size < opts.length) return false;
+  const qText = q.q.replace(/[«»"]/g, "").toLowerCase().trim();
+  if (opts.some((o) => qText.includes(o.toLowerCase()))) return false;
+  return true;
+}
+
 function localQuiz(topic) {
   if (!topic || !topic.words?.length) return [];
   const pool = shuffle(topic.words).slice(0, Math.min(10, topic.words.length));
   return pool.map((w) => {
-    const wrong = shuffle(topic.words.filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
+    const wrongRu = [...new Set(shuffle(topic.words.filter((x) => x.sk !== w.sk)).map((x) => x.ru))];
+    const wrong = wrongRu.filter((ru) => ru !== w.ru).slice(0, 3);
     const opz = shuffle([w.ru, ...wrong]);
     return { q: `Как переводится «${w.sk}»?`, options: opz, answer: opz.indexOf(w.ru) };
-  });
+  }).filter(isValidQuizQuestion);
 }
 
 export function answerQuiz(index, choice) {

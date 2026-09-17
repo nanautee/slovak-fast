@@ -55,6 +55,17 @@ export async function generateTopicJson(dayNumber, seen) {
   return extractJson(await callGroq(JSON_SYSTEM, user));
 }
 
+function isValidQuizQuestion(q) {
+  if (!q || !Array.isArray(q.options) || q.options.length < 2) return false;
+  if (q.answer < 0 || q.answer >= q.options.length) return false;
+  const opts = q.options.map((o) => String(o || "").trim());
+  if (opts.some((o) => !o)) return false;
+  if (new Set(opts.map((o) => o.toLowerCase())).size < opts.length) return false;
+  const qText = q.q.replace(/[«»"]/g, "").toLowerCase().trim();
+  if (opts.some((o) => qText.includes(o.toLowerCase()))) return false;
+  return true;
+}
+
 export async function generateQuizJson(topic) {
   if (!KEY) throw new Error("no key");
   const words = (topic?.words || []).map((w) => `${w.sk} = ${w.ru}`).join("; ");
@@ -77,7 +88,7 @@ answer — индекс правильного варианта в ПЕРЕМЕ�
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return { ...q, options: shuffled, answer: shuffled.indexOf(q.options[q.answer]) };
-  });
+  }).filter(isValidQuizQuestion);
 }
 
 export async function chatReply(topic, msgs, opener) {

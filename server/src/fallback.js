@@ -244,10 +244,11 @@ export function localQuiz(topic) {
   const pool = shuffle(topic.words);
   const picked = pool.slice(0, Math.min(10, topic.words.length));
   return picked.map((w) => {
-    const wrong = shuffle(topic.words.filter((x) => x.sk !== w.sk)).slice(0, 3).map((x) => x.ru);
+    const wrongRu = [...new Set(shuffle(topic.words.filter((x) => x.sk !== w.sk)).map((x) => x.ru))];
+    const wrong = wrongRu.filter((ru) => ru !== w.ru).slice(0, 3);
     const options = shuffle([w.ru, ...wrong]);
     return { q: `Как переводится «${w.sk}»?`, options, answer: options.indexOf(w.ru) };
-  });
+  }).filter((q) => q.answer !== -1);
 }
 
 function shuffle(arr) {

@@ -132,6 +132,12 @@ test("topic/quiz/chat работают без авторизации", async () 
     const ans = qu.options[qu.answer];
     assert.ok(ans !== undefined, "индекс answer валиден");
     assert.ok(qu.options.includes(qu.options[qu.answer]), "вариант содержит правильный перевод");
+    assert.equal(new Set(qu.options.map((o) => o.toLowerCase())).size, qu.options.length, "нет дублей в вариантах");
+    const qText = qu.q.replace(/[«»"]/g, "").toLowerCase().trim();
+    assert.ok(
+      !qu.options.some((o) => qText.includes(o.toLowerCase())),
+      "ни один вариант не повторяет текст вопроса"
+    );
     firstAnswer = firstAnswer === -1 ? qu.answer : firstAnswer;
   }
   assert.ok(q.json.questions.length >= 2, "минимум 2 вопроса для проверки позиций");
