@@ -25,10 +25,11 @@ export function speak(text, onEnd) {
     onEnd?.();
     return false;
   }
+  const isRu = /[\u0400-\u04FF]/.test(text);
   const u = new SpeechSynthesisUtterance(text);
   const v = getSkVoice();
-  if (v) u.voice = v;
-  u.lang = "sk-SK";
+  if (v && !isRu) u.voice = v;
+  u.lang = isRu ? "ru-RU" : "sk-SK";
   u.rate = 0.85;
   u.onend = () => onEnd?.();
   u.onerror = () => onEnd?.();

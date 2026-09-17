@@ -20,8 +20,9 @@ function themeChips(topic) {
 
 function Bubble({ m }) {
   const isUser = m.role === "user";
+  const say = () => speak(m.content.replace(/\[П\][\s\S]*$/, "").replace(/^💡\s*/, "").trim());
   return (
-    <div className={`group flex items-end gap-2 max-w-[90%] ${isUser ? "ml-auto flex-row-reverse" : ""}`}>
+    <div className={`flex items-end gap-2 max-w-[90%] ${isUser ? "ml-auto flex-row-reverse" : ""}`}>
       <div
         className={`rounded-2xl px-3.5 py-2.5 text-[15px] leading-snug break-words whitespace-pre-wrap ${
           isUser
@@ -38,15 +39,13 @@ function Bubble({ m }) {
           ) : null
         )}
       </div>
-      {!isUser && (
-        <button
-          onClick={() => speak(m.content.split("[П]")[0].trim())}
-          className="w-7 h-7 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-          title="Прослушать"
-        >
-          🔊
-        </button>
-      )}
+      <button
+        onClick={say}
+        className="w-8 h-8 shrink-0 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center text-sm active:scale-90 transition-transform"
+        title="Прослушать"
+      >
+        🔊
+      </button>
     </div>
   );
 }
