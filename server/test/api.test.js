@@ -2,7 +2,11 @@ process.env.DATA_DIR = ".test-data";
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { rmSync, existsSync } from "node:fs";
-import { app } from "../src/app.js";
+import { createApp } from "../src/app.js";
+import * as data from "../src/data.js";
+import { createAi } from "../src/ai.js";
+
+const app = createApp({ data, ai: createAi({}) });
 
 before(() => {
   if (existsSync(".test-data")) rmSync(".test-data", { recursive: true, force: true });

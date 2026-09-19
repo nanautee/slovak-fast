@@ -1,21 +1,12 @@
 {
-  "services": {
-    "web": {
-      "root": ".",
-      "framework": "vite"
-    }
-  },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://slovak-fast-production.up.railway.app/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": {
-        "type": "service",
-        "service": "web"
-      }
+      "source": "/api/:path((?!groq).*)",
+      "destination": "https://slovak-fast-api.slovakfast.workers.dev/api/:path"
     }
   ]
 }

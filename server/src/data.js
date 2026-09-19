@@ -1,31 +1,11 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
+import { seedProfile, sanitize, cleanName, randomToken, hashSecret } from "./store-core.js";
 
 const dataDir = () => process.env.DATA_DIR || "./data";
 const dbFile = () => process.env.DB_FILE || `${dataDir()}/store.json`;
 
 let db = null;
-
-function seedProfile(name = "") {
-  return {
-    name,
-    dayNumber: 1,
-    streak: 0,
-    lastDoneDate: null,
-    topicDate: null,
-    topic: null,
-    today: {
-      cards: { done: false, correct: 0, total: 0 },
-      chat: { done: false, lines: 0, msgs: [], opener: "" },
-      quiz: { done: false, correct: 0, total: 0, questions: [], answers: [], answered: 0 },
-      listen: { done: false, correct: 0, total: 0, questions: [], answered: 0 },
-    },
-    words: [],
-    history: [],
-    seenTopics: [],
-  };
-}
 
 function legacyProfiles(raw) {
   const out = {};
@@ -41,10 +21,6 @@ function legacyProfiles(raw) {
     }
   }
   return out;
-}
-
-function hashSecret(secret) {
-  return createHash("sha256").update(String(secret || "")).digest("hex");
 }
 
 function load() {
@@ -71,71 +47,56 @@ function persist() {
   writeFileSync(dbFile(), JSON.stringify(db, null, 2));
 }
 
-function sanitize(p) {
-  const base = seedProfile(p && p.name);
-  return {
-    ...base,
-    ...(p || {}),
-    today: { ...base.today, ...((p && p.today) || {}) },
-    words: Array.isArray(p && p.words) ? p.words : [],
-    history: Array.isArray(p && p.history) ? p.history : [],
-    seenTopics: Array.isArray(p && p.seenTopics) ? p.seenTopics : [],
-  };
-}
-
 /* ---------- device = профиль ---------- */
 
-export function listUsers() {
+export async function listUsers() {
   return Object.entries(load().profiles).map(([id, p]) => ({ id, name: (p && p.name) || "" }));
 }
 
-export function usersMeta() {
-  return { profiles: listUsers() };
+export async function usersMeta() {
+  return { profiles: await listUsers() };
 }
 
-export function deviceExists(tok) {
+export async function deviceExists(tok) {
   if (!tok) return false;
-  return !!load().profiles[tok] && load().pins[tok] === hashSecret(tok);
+  return !!load().profiles[tok] && load().pins[tok] === (await hashSecret(tok));
 }
 
-export function createDevice(name) {
+export async function createDevice(name) {
   const d = load();
-  const token = randomBytes(32).toString("hex");
-  const cleanName = String(name || "").trim() || "Игрок";
-  d.profiles[token] = sanitize(seedProfile(cleanName));
-  d.pins[token] = hashSecret(token);
+  const token = randomToken();
+  const clean = String(name || "").trim() || "Игрок";
+  d.profiles[token] = sanitize(seedProfile(clean));
+  d.pins[token] = await hashSecret(token);
   persist();
   return { token, profile: d.profiles[token] };
 }
 
-export function getDevice(tok) {
-  if (!deviceExists(tok)) return null;
+export async function getDevice(tok) {
+  if (!(await deviceExists(tok))) return null;
   return load().profiles[tok];
 }
 
-export function renameDevice(tok, name) {
+export async function renameDevice(tok, name) {
   const d = load();
-  if (!deviceExists(tok)) throw Object.assign(new Error("Нет токена устройства"), { status: 401 });
-  const cleanName = String(name || "").trim();
-  if (cleanName.length < 1) throw Object.assign(new Error("Имя слишком короткое"), { status: 400 });
-  if (cleanName.length > 20) throw Object.assign(new Error("Имя слишком длинное"), { status: 400 });
-  d.profiles[tok] = sanitize({ ...d.profiles[tok], name: cleanName });
+  if (!(await deviceExists(tok))) throw Object.assign(new Error("Нет токена устройства"), { status: 401 });
+  d.profiles[tok] = sanitize({ ...d.profiles[tok], name: cleanName(name) });
   persist();
   return d.profiles[tok];
 }
 
-export function setProfile(tok, profile) {
+export async function setProfile(tok, profile) {
   const d = load();
-  if (!deviceExists(tok)) throw Object.assign(new Error("Нет токена устройства"), { status: 401 });
+  if (!(await deviceExists(tok))) throw Object.assign(new Error("Нет токена устройства"), { status: 401 });
   const prev = d.profiles[tok];
   d.profiles[tok] = sanitize({ ...(profile || {}), name: prev.name });
   persist();
   return d.profiles[tok];
 }
 
-export function deleteDevice(tok) {
+export async function deleteDevice(tok) {
   const d = load();
-  if (!deviceExists(tok)) throw Object.assign(new Error("Нет токена устройства"), { status: 401 });
+  if (!(await deviceExists(tok))) throw Object.assign(new Error("Нет токена устройства"), { status: 401 });
   delete d.profiles[tok];
   delete d.pins[tok];
   persist();

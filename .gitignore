@@ -2,6 +2,8 @@ node_modules/
 dist/
 server/data/
 server/.test-data/
+server/dist/
+.wrangler/
 data/
 *.log
 .env

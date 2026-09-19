@@ -1,0 +1,15 @@
+name = "slovak-fast-api"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+AI_PROXY_URL = "https://slovak-fast.vercel.app/api/groq"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "slovak-fast"
+database_id = "72ad64f9-7a84-4440-bcea-135a28135845"
+
+# Секреты задаются командами:
+#   wrangler secret put GROQ_API_KEY
+#   wrangler secret put AI_PROXY_TOKEN
